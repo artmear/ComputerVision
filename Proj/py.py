@@ -3,7 +3,7 @@ import cv2
 import os
 import json
 
-from debug import visualize_table_mask_debug
+from debug import visualize_table_mask_debug, save_debug_image
 
 json_input = "example_json/input.json"
 
@@ -48,7 +48,7 @@ def order_points_clockwise(pts):
 
     return pts.astype(np.float32)
 
-def warp_table(image, image_name, output_dir):
+def create_mask(image, image_name, output_dir, debugOutput = True):
     os.makedirs(output_dir, exist_ok=True)
     h, w = image.shape[:2]
 
@@ -100,13 +100,20 @@ def warp_table(image, image_name, output_dir):
     table_mask = np.zeros_like(blue_only)
     cv2.drawContours(table_mask, [quad], -1, 255, thickness=cv2.FILLED)
 
-    # Save debug visualization of the table mask
-    visualize_table_mask_debug(
-        image=image,
-        image_name=image_name,
-        output_dir="output_debug",
-        table_mask=table_mask,
-    )
+    if (debugOutput):
+        # Save debug visualization of the table mask
+        visualize_table_mask_debug(
+            image=image,
+            image_name=image_name,
+            output_dir="output_debug",
+            table_mask=table_mask,
+        )
+
+    return (table_mask, quad)
+
+def warp_table(image, image_name, output_dir, debugOutput):
+    # Create the table mask
+    table_mask, quad = create_mask(image, image_name, output_dir, debugOutput)
 
     # Order corner points consistently (tl, tr, br, bl) top-left, top-right...
     src = order_points_clockwise(quad)
@@ -138,42 +145,91 @@ def warp_table(image, image_name, output_dir):
     warped_path = os.path.join(output_dir, f"{base_name}_warped_table.jpg")
     cv2.imwrite(warped_path, warped)
     print(f"[INFO] warped table saved in: {warped_path}")
+    return warped, H, maxWidth, maxHeight
 
-def detect_balls(img):
-    return # TODO
+def detect_balls(image, image_name, output_dir, debugOutput):
 
-# def detect_table(image):
-#     mask_img = cv2.inRange(hsv_img, lower_blue, upper_blue)
+    # Milimiters
+    POOL_TABLE_LENGTH = 254*10
+    POOL_BALL_DIAMETER = 58
 
-#     # TODO: Remove? This should remove noise but doesn't make any difference
-#     #kernel = np.ones((5,5), np.uint8)
-#     #mask_img = cv2.morphologyEx(mask_img, cv2.MORPH_CLOSE, kernel)
-#     #mask_img = cv2.morphologyEx(mask_img, cv2.MORPH_OPEN, kernel)
+    # Diameter of a ball is now aproximatly POOL_TABLE_BALL_RATIO of the width of the table
+    POOL_TABLE_BALL_RATIO = POOL_BALL_DIAMETER/POOL_TABLE_LENGTH
 
-#     result_img = cv2.bitwise_and(hsv_img, hsv_img, mask=mask_img)
+    # Warp the table and get the transformation matrix
+    warped, H, width, height = warp_table(image, image_name, output_dir, debugOutput)
 
-#     # 2. Convert the colors again
-#     result_img = cv2.cvtColor(result_img, cv2.COLOR_HSV2RGB)
-#     result_img = cv2.cvtColor(result_img, cv2.COLOR_RGB2GRAY)
+    # Pool tables have width > height so we can identify the size by checking which is the biggest number:
+    if (height > width):
+        width = height
 
-#     # 3. Apply Hough circles to detect balls
-#     result_img = cv2.medianBlur(result_img, 5)
+    table_mask, quad = create_mask(image, image_name, output_dir, debugOutput)
+    ima = cv2.bitwise_and(image, image, mask=table_mask)
+
+    # Before applying the HoughCircles we need to convert the image to grayscale
+    # otherwise it will fail. We can also blur the image to remove some of the noise that may interfere.
+    gray = cv2.cvtColor(ima, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.medianBlur(gray, 7)
+
+    # Detect circles using Hough Transform
+    ballRadius = (width*POOL_TABLE_BALL_RATIO)/2.0
+    offset = 12
+
+    # Slightly less than a full diameter (2 * radius)
+    minDist = ballRadius * 1.8
+    param1 = 40
+    param2 = 13
+    minRadius = int(ballRadius)
+    maxRadius = int(ballRadius + offset)
+
+    print(f"[INFO] minDist={minDist}, param1={param1}, param2={param2}, minRadius={minRadius}, maxRadius={maxRadius}")
+
+    circles = cv2.HoughCircles(blurred, cv2.HOUGH_GRADIENT, dp=1,  minDist=minDist, param1=param1, param2=param2, minRadius=minRadius, maxRadius=maxRadius)
+
+    # Draw the detected balls on the original angled image
+    output_image = image.copy()
     
-#     circles = cv2.HoughCircles(result_img, cv2.HOUGH_GRADIENT, dp=1, minDist=60, param1=50, param2=30, minRadius=15, maxRadius=50)
+    # We need the inverse matrix to project coordinates back to original image
+    #H_inv = np.linalg.inv(H)
+    
+    if circles is not None:
+        circles = np.uint16(np.around(circles))
+        for i in circles[0, :]:
+            #x, y, r = i[0], i[1], i[2]
+            #
+            ## Pack the center point and an edge point to apply perspective transform
+            #pts = np.array([[[x, y], [x + r, y]]], dtype=np.float32)
+            #
+            ## Map coordinates back to the original image
+            #pts_orig = cv2.perspectiveTransform(pts, H_inv)
+            #
+            #orig_x, orig_y = int(pts_orig[0][0][0]), int(pts_orig[0][0][1])
+            #orig_edge_x, orig_edge_y = int(pts_orig[0][1][0]), int(pts_orig[0][1][1])
+            #
+            ## Approximate the radius in the original image by measuring distance between center and edge
+            #orig_r = int(np.linalg.norm(np.array([orig_x, orig_y]) - np.array([orig_edge_x, orig_edge_y])))
 
-#     circles = np.uint16(np.around(circles))
-#     for i in circles[0,:]:
-#         # draw the outer circle
-#         cv2.circle(result_img,(i[0],i[1]),i[2],(255,255,0),10)
+            # Draw the outer circle
+            cv2.circle(output_image, (i[0], i[1]), i[2], (0, 255, 0), 2)
+            # Draw the center of the circle
+            cv2.circle(output_image, (i[0], i[1]), 2, (0, 0, 255), 3)
+
+    # Save output for debugging
+    save_debug_image(output_image, image_name, "debug")
+    
+    return circles
+
+
 
 
 images = read_from_json(json_input)
 
-# table_image, img_name = read_image(images, 0)
+table_image, img_name = read_image(images, 5)
 
-# warp_table(table_image, img_name, output_dir="output")
+detect_balls(table_image, img_name, output_dir="output", debugOutput=True)
 
 for i in range(len(images)):
     table_image, img_name = read_image(images, i)
 
-    warp_table(table_image, img_name, output_dir="output")
+    #warp_table(table_image, img_name, output_dir="output")
+    detect_balls(table_image, img_name, output_dir="output", debugOutput=False)
