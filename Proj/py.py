@@ -232,7 +232,7 @@ def print_hsv_ranges():
             print(f"  Range {i//2 + 1}: H: {lower_pct[0]}-{upper_pct[0]}, S: {lower_pct[1]}%-{upper_pct[1]}%, V: {lower_pct[2]}%-{upper_pct[2]}%")
 
 
-''' Main function to detect ball color and type, and map to ball number '''
+''' Detect single ball color and type, and map to ball number '''
 def detect_ball_color(ball_roi):
     # Convert to HSV for easier color identification
     hsv_img = cv2.cvtColor(ball_roi, cv2.COLOR_BGR2HSV)
@@ -255,7 +255,7 @@ def detect_ball_color(ball_roi):
     # TODO: Is this needed?
     
     ### TODO: Remove? (DEBUG) ###
-    show_ball_and_color(ball_roi, color_hsv)
+    #show_ball_and_color(ball_roi, color_hsv)
     print("Dominant color (HSV):", hsv_in_pct[0], hsv_in_pct[1], "%", hsv_in_pct[2], "%")
     print("Dominant color (RGB):", cv2.cvtColor(np.uint8([[color_hsv]]), cv2.COLOR_HSV2RGB)[0][0])
     print("Detected BallColor:", color_hsv)
@@ -267,7 +267,78 @@ def detect_ball_color(ball_roi):
     return ball_type, number
 
 
-ball_test_img = cv2.imread("ball_test.png")
-print(detect_ball_color(ball_test_img))
+''' Crop the ball region of interest (ROI) from the original image, given the detected circle parameters '''
+def crop_ball_roi(image, x, y, r, pad=4):
+    h, w = image.shape[:2]
+    r = int(r) + pad
+    x, y = int(x), int(y)
+
+    x1 = max(0, x - r)
+    y1 = max(0, y - r)
+    x2 = min(w, x + r)
+    y2 = min(h, y + r)
+
+    roi = image[y1:y2, x1:x2]
+    return roi, (x1, y1, x2, y2)
 
 
+''' Main function to detect all balls numbers and types. Return their types and numbers '''
+def detect_ball_numbers(image, circles):
+    balls = []
+    if circles is None:
+        return balls
+
+    circles = np.asarray(circles)
+
+    # If it's OpenCV HoughCircles output: (1, N, 3) -> (N, 3)
+    if circles.ndim == 3 and circles.shape[0] == 1 and circles.shape[2] == 3:
+        circles = circles[0]
+
+    for (x, y, r) in circles:
+        ball_roi, bbox = crop_ball_roi(image, x, y, r)
+        if ball_roi.size == 0:
+            continue
+        ball_type, number = detect_ball_color(ball_roi)
+        balls.append(((int(x), int(y), int(r)), bbox, ball_type, number))
+
+    return balls
+
+
+''' Visualize the detected balls by drawing bounding boxes and placing the detected number below each ball ROI '''
+def show_detected_balls_on_image(image, balls):
+    display_img = image.copy()
+
+    for (_, _, _), (x1, y1, x2, y2), _, number in balls:
+        # Draw ROI bounding box
+        cv2.rectangle(display_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+        # Place the detected number slightly below the ROI
+        label = "?" if number is None else str(number)
+        text_x = x1
+        text_y = min(display_img.shape[0] - 5, y2 + 20)
+        cv2.putText(display_img, label, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2, cv2.LINE_AA)
+
+    f, ax = plt.subplots(1, 1, figsize=(12, 6))
+    ax.imshow(cv2.cvtColor(display_img, cv2.COLOR_BGR2RGB))
+    ax.set_title("Detected Balls (Number Under ROI)")
+    ax.axis("off")
+    plt.show()
+
+
+# TODO: Remove (DEBUG)
+debug_circles = [[ 964, 650, 22],
+                 [ 542, 628, 22],
+                 [ 846, 698, 24],
+                 [1140, 616, 20],
+                 [ 658, 730, 23],
+                 [ 610, 290, 18],
+                 [ 860, 468, 19],
+                 [ 926, 264, 19], 
+                 [1230, 476, 20],
+                 [ 504, 458, 22],
+                 [ 928, 240, 19]]
+
+img = readImage(images, 5)
+balls = detect_ball_numbers(img, debug_circles)
+print(balls)
+show_detected_balls_on_image(img, balls)
