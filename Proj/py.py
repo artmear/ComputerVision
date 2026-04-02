@@ -125,20 +125,20 @@ BALL_MAPPING = {
 # FIXME: Might need to be adjusted!!!
 COLOR_RANGES = {
     BallColor.WHITE:  [(0, 0, 200), (180, 40, 255)],
+    BallColor.BROWN:  [(5, 80, 50), (25, 255, 180)],
+    BallColor.RED:    [(0, 90, 100), (12, 255, 255), (170, 90, 100), (180, 255, 255)], # Red can wrap around the hue range, so we need two ranges
+    BallColor.ORANGE: [(8, 90, 120), (30, 255, 255)],
     BallColor.YELLOW: [(20, 120, 120), (35, 255, 255)],
-    BallColor.BLUE:   [(95, 120, 80), (130, 255, 255)],
-    BallColor.RED:    [(0, 150, 120), (10, 255, 255), (170, 150, 120), (180, 255, 255)], # Red can wrap around the hue range, so we need two ranges
-    BallColor.PURPLE: [(130, 100, 80), (160, 255, 255)],
-    BallColor.ORANGE: [(10, 150, 150), (25, 255, 255)],
     BallColor.GREEN:  [(40, 100, 80), (85, 255, 255)],
-    BallColor.BROWN:  [(8, 120, 60), (25, 255, 150)],
-    BallColor.BLACK:  [(0, 0, 0), (180, 255, 60)]
+    BallColor.BLUE:   [(95, 120, 80), (130, 255, 255)],
+    BallColor.PURPLE: [(130, 100, 80), (160, 255, 255)],
+    BallColor.BLACK:  [(0, 0, 0), (180, 255, 16)]
 }
 
 
 ''' Get the mean color of an image, excluding the center (number circle) '''
 def get_mean_color(rgb_img):
-    # Find the center and radius for the circular mask
+    # Find the center and radius for the circular mask # FIXME: This is not going to work if the ball doesn't have the correct rotation
     h, w = rgb_img.shape[:2]
     center = (w // 2, h // 2)
     radius = int(min(h, w) * 0.45)
@@ -159,7 +159,7 @@ def get_mean_color(rgb_img):
 
 ''' Determine if the ball is solid or striped, based on the ratio of white pixels in the outer area '''
 def get_ball_type(hsv_img):
-    # Mask to ignore center (number circle)
+    # Mask to ignore center (number circle) # FIXME: This is not going to work if the ball doesn't have the correct rotation
     h, w = hsv_img.shape[:2]
     mask = np.ones((h, w), dtype=np.uint8) * 255
     center = (w // 2, h // 2)
@@ -181,7 +181,7 @@ def get_ball_type(hsv_img):
     print("White ratio (outer only):", white_ratio)
 
     # Classify as striped if the white ratio exceeds a certain threshold (tuned based on testing)
-    if white_ratio > 0.18: # TODO: Adjust threshold?
+    if white_ratio > 0.12: # TODO: Adjust threshold?
         return BallType.STRIPED
     else:
         return BallType.SOLID
@@ -217,6 +217,20 @@ def show_ball_and_color(ball_roi, color_hsv):
     axarr[1].axis("off")
     plt.show()
 
+# TODO: Remove (DEBUG to show HSV ranges in different scale)
+def print_hsv_ranges():
+    for color, ranges in COLOR_RANGES.items():
+        print(f"{color.name}:")
+        for i in range(0, len(ranges), 2):
+            lower = ranges[i]
+            upper = ranges[i+1]
+            lower_pct = (lower[0] * 2, (lower[1] / 255) * 100, (lower[2] / 255) * 100)
+            upper_pct = (upper[0] * 2, (upper[1] / 255) * 100, (upper[2] / 255) * 100)
+            #Rounded to int
+            lower_pct = tuple(map(int, lower_pct))
+            upper_pct = tuple(map(int, upper_pct))
+            print(f"  Range {i//2 + 1}: H: {lower_pct[0]}-{upper_pct[0]}, S: {lower_pct[1]}%-{upper_pct[1]}%, V: {lower_pct[2]}%-{upper_pct[2]}%")
+
 
 ''' Main function to detect ball color and type, and map to ball number '''
 def detect_ball_color(ball_roi):
@@ -247,6 +261,7 @@ def detect_ball_color(ball_roi):
     print("Detected BallColor:", color_hsv)
     print("Classified color:", classified_color)
     print("Ball number:", number)
+    print_hsv_ranges()
     #############################
 
     return ball_type, number
