@@ -136,24 +136,21 @@ COLOR_RANGES = {
 }
 
 
-''' Get the mean color of an image, excluding the center (number circle) '''
-def get_mean_color(rgb_img):
-    # Find the center and radius for the circular mask # FIXME: This is not going to work if the ball doesn't have the correct rotation
-    h, w = rgb_img.shape[:2]
+def crop_ball_to_circle(ball_bgr, radius_scale=0.40):
+    h, w = ball_bgr.shape[:2]
     center = (w // 2, h // 2)
-    radius = int(min(h, w) * 0.45)
+    radius = int(min(h, w) * radius_scale)
 
-    # Create a circular mask to exclude the center area
     mask = np.zeros((h, w), dtype=np.uint8)
-    cv2.circle(mask, center, radius, 255, -1) 
+    cv2.circle(mask, center, radius, 255, -1)
+    return cv2.bitwise_and(ball_bgr, ball_bgr, mask=mask), mask
 
-    # Compute the mean color using the mask
-    mean_bgr = cv2.mean(rgb_img, mask=mask)[:3]
+
+def get_mean_color(ball_bgr, mask):
+    ball_roi = cv2.bitwise_and(ball_bgr, ball_bgr, mask=mask)
+    mean_bgr = cv2.mean(ball_roi, mask=mask)[:3]
     mean_bgr = np.uint8([[mean_bgr]])
-
-    # Convert mean color to HSV for easier color classification
     mean_hsv = cv2.cvtColor(mean_bgr, cv2.COLOR_BGR2HSV)[0][0]
-
     return mean_hsv
 
 
@@ -239,7 +236,8 @@ def detect_ball_color(ball_roi):
     number = None
 
     # Compute dominant color
-    color_hsv = get_mean_color(ball_roi)
+    ball_roi, mask = crop_ball_to_circle(ball_roi) # Crop to circle to avoid background influence
+    color_hsv = get_mean_color(ball_roi, mask)
     hsv_in_pct = (color_hsv[0] * 2, (color_hsv[1] / 255) * 100, (color_hsv[2] / 255) * 100)
 
     # Determine ball type, based on white ratio
@@ -255,7 +253,7 @@ def detect_ball_color(ball_roi):
     # TODO: Is this needed?
     
     ### TODO: Remove? (DEBUG) ###
-    #show_ball_and_color(ball_roi, color_hsv)
+    show_ball_and_color(ball_roi, color_hsv)
     print("Dominant color (HSV):", hsv_in_pct[0], hsv_in_pct[1], "%", hsv_in_pct[2], "%")
     print("Dominant color (RGB):", cv2.cvtColor(np.uint8([[color_hsv]]), cv2.COLOR_HSV2RGB)[0][0])
     print("Detected BallColor:", color_hsv)
