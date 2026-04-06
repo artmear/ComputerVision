@@ -147,6 +147,23 @@ def warp_table(image, image_name, output_dir, debugOutput):
     print(f"[INFO] warped table saved in: {warped_path}")
     return warped, H, maxWidth, maxHeight
 
+
+#
+# TODO: remove, already defined in another branch
+#
+def crop_ball_roi(image, x, y, r, pad=4):
+    h, w = image.shape[:2]
+    r = int(r) + pad
+    x, y = int(x), int(y)
+
+    x1 = max(0, x - r)
+    y1 = max(0, y - r)
+    x2 = min(w, x + r)
+    y2 = min(h, y + r)
+
+    roi = image[y1:y2, x1:x2]
+    return roi, (x1, y1, x2, y2)
+
 def detect_balls(image, image_name, output_dir, debugOutput):
 
     # Milimiters
@@ -192,22 +209,40 @@ def detect_balls(image, image_name, output_dir, debugOutput):
     # We need the inverse matrix to project coordinates back to original image
     #H_inv = np.linalg.inv(H)
     
+    resultingCircles = []
+
     if circles is not None:
         circles = np.uint16(np.around(circles))
-        for i in circles[0, :]:
-            #x, y, r = i[0], i[1], i[2]
-            #
-            ## Pack the center point and an edge point to apply perspective transform
-            #pts = np.array([[[x, y], [x + r, y]]], dtype=np.float32)
-            #
-            ## Map coordinates back to the original image
-            #pts_orig = cv2.perspectiveTransform(pts, H_inv)
-            #
-            #orig_x, orig_y = int(pts_orig[0][0][0]), int(pts_orig[0][0][1])
-            #orig_edge_x, orig_edge_y = int(pts_orig[0][1][0]), int(pts_orig[0][1][1])
-            #
-            ## Approximate the radius in the original image by measuring distance between center and edge
-            #orig_r = int(np.linalg.norm(np.array([orig_x, orig_y]) - np.array([orig_edge_x, orig_edge_y])))
+        hsv_image = cv2.cvtColor(image.copy(), cv2.COLOR_BGR2HSV)
+        for circle_idx, i in enumerate(circles[0, :], start=1):
+            x, y, r = i[0], i[1], i[2]
+
+            # Crop the image to just the detected circle.
+            (hsv_image_cropped, _) = crop_ball_roi(hsv_image, x, y, 10, pad=0)
+
+            if debugOutput:
+
+                base_name = os.path.splitext(image_name)[0]
+                hue_debug_path = os.path.join(output_dir, f"{base_name}_hue_image_cropped_{circle_idx:02d}.png")
+                cv2.imwrite(hue_debug_path, cv2.cvtColor(hsv_image_cropped, cv2.COLOR_HSV2BGR))
+                print(f"[DEBUG] hue_image_cropped saved in: {hue_debug_path}")
+
+            hue_image_cropped = hsv_image_cropped[:, :, 0]
+            hue_values = hue_image_cropped
+
+            # Find the dominant hue
+            hist, bins = np.histogram(hue_values, bins=180, range=(0, 180))
+            dominant_hue = np.argmax(hist)
+
+
+            if dominant_hue > 90 and dominant_hue < 103:
+                print(f"Color is {dominant_hue}")
+                continue
+
+            
+
+            resultingCircles.append([x,y,r])
+            
 
             # Draw the outer circle
             cv2.circle(output_image, (i[0], i[1]), i[2], (0, 255, 0), 2)
@@ -217,7 +252,7 @@ def detect_balls(image, image_name, output_dir, debugOutput):
     # Save output for debugging
     save_debug_image(output_image, image_name, "debug")
     
-    return circles
+    return resultingCircles
 
 
 
@@ -225,11 +260,10 @@ def detect_balls(image, image_name, output_dir, debugOutput):
 images = read_from_json(json_input)
 
 table_image, img_name = read_image(images, 5)
-
 detect_balls(table_image, img_name, output_dir="output", debugOutput=True)
 
-for i in range(len(images)):
+""" for i in range(len(images)):
     table_image, img_name = read_image(images, i)
 
     #warp_table(table_image, img_name, output_dir="output")
-    detect_balls(table_image, img_name, output_dir="output", debugOutput=False)
+    print(detect_balls(table_image, img_name, output_dir="output", debugOutput=False)) """
