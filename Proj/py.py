@@ -9,9 +9,9 @@ def read_from_json(input_dir):
     with open(input_dir) as json_data:
         return json.load(json_data)["image_path"]
  
-def write_to_json(output_dir, contents_list):
-    with open(outputDir, 'w') as f:
-        json.dump(contentsList, f) # FIXME: Convert list into dict?
+def write_to_json(output_path, contents):
+    with open(output_path, "w", encoding="utf-8") as file:
+        json.dump(contents, file, ensure_ascii=False, indent=2)
  
 def read_image(images, image_index):
     full_path = images[image_index]
@@ -45,6 +45,193 @@ def order_points_clockwise(pts):
     pts = np.roll(pts, -start, axis=0)
 
     return pts.astype(np.float32)
+
+def fit_lines_and_intersect(hull, image_shape):
+    h, w = image_shape[:2]
+    points = hull.reshape(-1, 2).astype(np.float32)
+    if len(points) < 8:
+        return None
+
+    rect = cv2.minAreaRect(hull)
+    box = cv2.boxPoints(rect).astype(np.float32)
+    box = order_points_clockwise(box)
+    tl, tr, br, bl = box
+
+    box_sides = [
+        (tl, tr),
+        (tr, br),
+        (br, bl),
+        (bl, tl),
+    ]
+
+    side_models = []
+    for a, b in box_sides:
+        direction = b - a
+        norm = float(np.linalg.norm(direction))
+        if norm < 1e-6:
+            return None
+        side_models.append({
+            "a": a,
+            "b": b,
+            "dir": direction / norm,
+        })
+
+    side_segments = [[], [], [], []]
+
+    n = len(points)
+    for i in range(n):
+        p1 = points[i]
+        p2 = points[(i + 1) % n]
+        seg_vec = p2 - p1
+        seg_len = float(np.linalg.norm(seg_vec))
+        if seg_len < 2.0:
+            continue
+
+        seg_dir = seg_vec / seg_len
+        mid = 0.5 * (p1 + p2)
+
+        best_side = -1
+        best_score = float("inf")
+
+        for side_idx, side in enumerate(side_models):
+            align = abs(float(np.dot(seg_dir, side["dir"])))
+            if align < 0.65:
+                continue
+
+            side_vec = side["b"] - side["a"]
+            dist = abs(
+                float(
+                    np.cross(
+                        np.array([side_vec[0], side_vec[1], 0.0], dtype=np.float32),
+                        np.array([mid[0] - side["a"][0], mid[1] - side["a"][1], 0.0], dtype=np.float32),
+                    )[2]
+                )
+            ) / (np.linalg.norm(side_vec) + 1e-6)
+
+            score = dist + (1.0 - align) * 80.0
+            if score < best_score:
+                best_score = score
+                best_side = side_idx
+
+        if best_side >= 0:
+            side_segments[best_side].append((seg_len, p1, p2))
+
+    if any(len(group) == 0 for group in side_segments):
+        return None
+
+    def side_points(group, keep=6):
+        chosen = sorted(group, key=lambda item: item[0], reverse=True)[:keep]
+        pts = []
+        for _, a, b in chosen:
+            pts.append(a)
+            pts.append(b)
+        return np.array(pts, dtype=np.float32)
+
+    side_point_sets = [side_points(group) for group in side_segments]
+    if any(len(pts) < 2 for pts in side_point_sets):
+        return None
+
+    def fit_line(pts):
+        vx, vy, x0, y0 = cv2.fitLine(pts, cv2.DIST_L2, 0, 0.01, 0.01)
+        return (
+            float(np.asarray(vx).item()),
+            float(np.asarray(vy).item()),
+            float(np.asarray(x0).item()),
+            float(np.asarray(y0).item()),
+        )
+
+    def intersect(line1, line2):
+        vx1, vy1, x1, y1 = line1
+        vx2, vy2, x2, y2 = line2
+        denom = vx1 * vy2 - vy1 * vx2
+        if abs(denom) < 1e-6:
+            return None
+        t = ((x2 - x1) * vy2 - (y2 - y1) * vx2) / denom
+        return np.array([x1 + t * vx1, y1 + t * vy1], dtype=np.float32)
+
+    side_lines = [fit_line(pts) for pts in side_point_sets]
+
+    corner0 = intersect(side_lines[3], side_lines[0])
+    corner1 = intersect(side_lines[0], side_lines[1])
+    corner2 = intersect(side_lines[1], side_lines[2])
+    corner3 = intersect(side_lines[2], side_lines[3])
+
+    corners = [corner0, corner1, corner2, corner3]
+    if any(corner is None for corner in corners):
+        return None
+
+    corners = order_points_clockwise(np.array(corners, dtype=np.float32))
+    corners[:, 0] = np.clip(corners[:, 0], 0, w - 1)
+    corners[:, 1] = np.clip(corners[:, 1], 0, h - 1)
+    return corners.reshape(-1, 1, 2).astype(np.int32)
+
+def approx_quad_from_hull(hull):
+    perimeter = cv2.arcLength(hull, True)
+
+    quad = None
+    best = None
+    best_diff = 10**9
+
+    for eps_factor in np.linspace(0.005, 0.10, 120):
+        approx = cv2.approxPolyDP(hull, eps_factor * perimeter, True)
+        diff = abs(len(approx) - 4)
+
+        if diff < best_diff:
+            best = approx
+            best_diff = diff
+
+        if len(approx) == 4:
+            quad = approx
+            break
+
+    if quad is None and best is not None and len(best) == 4:
+        quad = best
+
+    return quad
+
+def quad_internal_angles_deg(quad):
+    pts = order_points_clockwise(quad).astype(np.float32)
+    if len(pts) != 4:
+        return None
+
+    angles = []
+    for i in range(4):
+        prev_pt = pts[(i - 1) % 4]
+        curr_pt = pts[i]
+        next_pt = pts[(i + 1) % 4]
+
+        v1 = prev_pt - curr_pt
+        v2 = next_pt - curr_pt
+
+        n1 = float(np.linalg.norm(v1))
+        n2 = float(np.linalg.norm(v2))
+        if n1 < 1e-6 or n2 < 1e-6:
+            return None
+
+        cosang = float(np.dot(v1, v2) / (n1 * n2))
+        cosang = float(np.clip(cosang, -1.0, 1.0))
+        angles.append(float(np.degrees(np.arccos(cosang))))
+
+    return np.array(angles, dtype=np.float32)
+
+def quad_is_near_right_angles(quad, tolerance_deg=25.0):
+    angles = quad_internal_angles_deg(quad)
+    if angles is None:
+        return False
+    return bool(np.all(np.abs(angles - 90.0) <= tolerance_deg))
+
+def select_table_quad(hull, image_shape, right_angle_tolerance_deg=25.0):
+    quad = fit_lines_and_intersect(hull, image_shape)
+
+    if quad is not None and quad_is_near_right_angles(quad, tolerance_deg=right_angle_tolerance_deg):
+        return quad
+
+    quad_approx = approx_quad_from_hull(hull)
+    if quad_approx is not None:
+        return quad_approx
+
+    rect = cv2.minAreaRect(hull)
+    return cv2.boxPoints(rect).astype(np.int32).reshape(-1, 1, 2)
 
 def get_correct_orientation(warped_square_img):
     h, w = warped_square_img.shape[:2]
@@ -148,7 +335,7 @@ def save_debug_pipeline(
         _make_debug_tile(image, "01 Original"),
         _make_debug_tile(blue_mask, "02 Blue Mask"),
         _make_debug_tile(blue_only, "03 Largest Blue"),
-        _make_debug_tile(contour_stage, "04 Hull + Quad"),
+        _make_debug_tile(contour_stage, "04 Hull + approxPolyDP/Hull Lines intersection"),
         _make_debug_tile(table_mask, "05 Table Mask"),
         _make_debug_tile(probe_stage, "06 Warp Probe"),
         _make_debug_tile(warped_final, "07 Final Warp"),
@@ -162,7 +349,6 @@ def save_debug_pipeline(
 
 def warp_table(image, image_name, output_dir):
     os.makedirs(output_dir, exist_ok=True)
-    h, w = image.shape[:2]
 
     # Convert image to HSV and isolate blue table cloth
     hsv_img = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
@@ -182,31 +368,7 @@ def warp_table(image, image_name, output_dir):
 
     # Build convex hull around detected table and estimate a 4-corner polygon
     hull = cv2.convexHull(blue_cnt)
-    perimeter = cv2.arcLength(hull, True)
-
-    quad = None
-    best = None
-    best_diff = 10**9
-
-    for eps_factor in np.linspace(0.005, 0.10, 120):
-        approx = cv2.approxPolyDP(hull, eps_factor * perimeter, True)
-        diff = abs(len(approx) - 4)
-
-        if diff < best_diff:
-            best = approx
-            best_diff = diff
-
-        if len(approx) == 4:
-            quad = approx
-            break
-
-    # Fallback if no exact 4-point polygon is found
-    if quad is None:
-        if best is not None and len(best) == 4:
-            quad = best
-        else:
-            rect = cv2.minAreaRect(hull)
-            quad = cv2.boxPoints(rect).astype(np.int32).reshape(-1, 1, 2)
+    quad = select_table_quad(hull, image.shape, right_angle_tolerance_deg=25.0)
 
     # Create final table mask from detected quadrilateral
     table_mask = np.zeros_like(blue_only)
@@ -274,41 +436,8 @@ def warp_table(image, image_name, output_dir):
     cv2.imwrite(warped_path, warped)
     print(f"[INFO] warped table saved in: {warped_path}")
 
-def detect_balls(img):
-    return # TODO
-
-# def detect_table(image):
-#     mask_img = cv2.inRange(hsv_img, lower_blue, upper_blue)
-
-#     # TODO: Remove? This should remove noise but doesn't make any difference
-#     #kernel = np.ones((5,5), np.uint8)
-#     #mask_img = cv2.morphologyEx(mask_img, cv2.MORPH_CLOSE, kernel)
-#     #mask_img = cv2.morphologyEx(mask_img, cv2.MORPH_OPEN, kernel)
-
-#     result_img = cv2.bitwise_and(hsv_img, hsv_img, mask=mask_img)
-
-#     # 2. Convert the colors again
-#     result_img = cv2.cvtColor(result_img, cv2.COLOR_HSV2RGB)
-#     result_img = cv2.cvtColor(result_img, cv2.COLOR_RGB2GRAY)
-
-#     # 3. Apply Hough circles to detect balls
-#     result_img = cv2.medianBlur(result_img, 5)
-    
-#     circles = cv2.HoughCircles(result_img, cv2.HOUGH_GRADIENT, dp=1, minDist=60, param1=50, param2=30, minRadius=15, maxRadius=50)
-
-#     circles = np.uint16(np.around(circles))
-#     for i in circles[0,:]:
-#         # draw the outer circle
-#         cv2.circle(result_img,(i[0],i[1]),i[2],(255,255,0),10)
-
 
 images = read_from_json(json_input)
-
-# table_image, img_name = read_image(images, 0)
-
-# warp_table(table_image, img_name, output_dir="output")
-
 for i in range(len(images)):
     table_image, img_name = read_image(images, i)
-
     warp_table(table_image, img_name, output_dir="output")
