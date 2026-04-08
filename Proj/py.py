@@ -2,10 +2,35 @@ import numpy as np
 import cv2
 import os
 import json
+import argparse
 
-from debug import visualize_table_mask_debug
+def parse_args():
+    parser = argparse.ArgumentParser(description="Debug da deteção da mesa (original | filter | resultado)")
+    parser.add_argument("--input-json", type=str, default="example_json/input.json")
+    parser.add_argument("--max-images", type=int, default=15)
+    parser.add_argument("--debug-dir", type=str, default="output_debug")
+    parser.add_argument("--output-dir", type=str, default="output")
+    return parser.parse_args()
 
-json_input = "example_json/input.json"
+def visualize_table_mask_debug(image, image_name, output_dir, filter_mask, result_image):
+    os.makedirs(output_dir, exist_ok=True)
+
+    base_name = os.path.splitext(image_name)[0]
+    debug_path = os.path.join(output_dir, f"{base_name}_debug.jpg")
+
+    if len(filter_mask.shape) == 2:
+        filter_panel = cv2.cvtColor(filter_mask, cv2.COLOR_GRAY2BGR)
+    else:
+        filter_panel = filter_mask.copy()
+
+    h, w = image.shape[:2]
+    filter_panel = cv2.resize(filter_panel, (w, h), interpolation=cv2.INTER_NEAREST)
+    result_panel = cv2.resize(result_image, (w, h), interpolation=cv2.INTER_LINEAR)
+
+    debug_canvas = np.hstack([image, filter_panel, result_panel])
+
+    cv2.imwrite(debug_path, debug_canvas)
+    print(f"[DEBUG] debug image saved in: {debug_path}")
 
 def read_from_json(input_dir):
     with open(input_dir) as json_data:
@@ -48,9 +73,8 @@ def order_points_clockwise(pts):
 
     return pts.astype(np.float32)
 
-def warp_table(image, image_name, output_dir):
+def warp_table(image, image_name, output_dir, debug_dir):
     os.makedirs(output_dir, exist_ok=True)
-    h, w = image.shape[:2]
 
     # Convert image to HSV and isolate blue table cloth
     hsv_img = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
@@ -100,12 +124,17 @@ def warp_table(image, image_name, output_dir):
     table_mask = np.zeros_like(blue_only)
     cv2.drawContours(table_mask, [quad], -1, 255, thickness=cv2.FILLED)
 
+    # Build result panel (masked table + detected contour)
+    result_img = cv2.bitwise_and(image, image, mask=table_mask)
+    cv2.drawContours(result_img, [quad], -1, (0, 255, 255), 3)
+
     # Save debug visualization of the table mask
     visualize_table_mask_debug(
         image=image,
         image_name=image_name,
-        output_dir="output_debug",
-        table_mask=table_mask,
+        output_dir=debug_dir,
+        filter_mask=table_mask,
+        result_image=result_img,
     )
 
     # Order corner points consistently (tl, tr, br, bl) top-left, top-right...
@@ -142,38 +171,30 @@ def warp_table(image, image_name, output_dir):
 def detect_balls(img):
     return # TODO
 
-# def detect_table(image):
-#     mask_img = cv2.inRange(hsv_img, lower_blue, upper_blue)
+def main():
+    args = parse_args()
 
-#     # TODO: Remove? This should remove noise but doesn't make any difference
-#     #kernel = np.ones((5,5), np.uint8)
-#     #mask_img = cv2.morphologyEx(mask_img, cv2.MORPH_CLOSE, kernel)
-#     #mask_img = cv2.morphologyEx(mask_img, cv2.MORPH_OPEN, kernel)
+    project_root = os.path.dirname(os.path.abspath(__file__))
+    input_json_path = os.path.join(project_root, args.input_json)
+    images = read_from_json(input_json_path)
 
-#     result_img = cv2.bitwise_and(hsv_img, hsv_img, mask=mask_img)
+    max_images = min(len(images), args.max_images if args.max_images > 0 else len(images))
+    selected_images = images[:max_images]
 
-#     # 2. Convert the colors again
-#     result_img = cv2.cvtColor(result_img, cv2.COLOR_HSV2RGB)
-#     result_img = cv2.cvtColor(result_img, cv2.COLOR_RGB2GRAY)
+    output_dir = os.path.join(project_root, args.output_dir)
+    debug_dir = os.path.join(project_root, args.debug_dir)
 
-#     # 3. Apply Hough circles to detect balls
-#     result_img = cv2.medianBlur(result_img, 5)
-    
-#     circles = cv2.HoughCircles(result_img, cv2.HOUGH_GRADIENT, dp=1, minDist=60, param1=50, param2=30, minRadius=15, maxRadius=50)
+    print(f"[INFO] Processing {max_images} image(s)")
+    for image_rel_path in selected_images:
+        table_image = cv2.imread(os.path.join(project_root, image_rel_path))
+        img_name = os.path.basename(image_rel_path)
 
-#     circles = np.uint16(np.around(circles))
-#     for i in circles[0,:]:
-#         # draw the outer circle
-#         cv2.circle(result_img,(i[0],i[1]),i[2],(255,255,0),10)
+        if table_image is None:
+            print(f"[WARN] Could not read image: {image_rel_path}")
+            continue
+
+        warp_table(table_image, img_name, output_dir=output_dir, debug_dir=debug_dir)
 
 
-images = read_from_json(json_input)
-
-# table_image, img_name = read_image(images, 0)
-
-# warp_table(table_image, img_name, output_dir="output")
-
-for i in range(len(images)):
-    table_image, img_name = read_image(images, i)
-
-    warp_table(table_image, img_name, output_dir="output")
+if __name__ == "__main__":
+    main()
