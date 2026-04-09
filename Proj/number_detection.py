@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import os
 import json
 import math
-from debug import debug_dominant_color, show_detected_balls_on_image
+from debug import debug_dominant_color, show_detected_balls_on_image, save_debug_image
 
 # Color hue ranges
 LOWER_RED_HUE = 165 
@@ -266,13 +266,9 @@ def handle_duplicate_balls(balls):
 
 
 """ Main function to detect all balls numbers and types. Return their types and numbers """
-def detect_ball_numbers(image, circles):
+def detect_ball_numbers(image, circles, img_name):
     balls = []
-    if circles is None:
-        return balls
-
-    circles = np.asarray(circles)
-
+  
     # For each detected circle, crop the ROI, detect color and type, and store results in a Ball object
     for (x, y, r) in circles:
         ball_roi, bbox = crop_ball_roi(image, x, y, r)
@@ -283,6 +279,22 @@ def detect_ball_numbers(image, circles):
         #balls.append(((int(x), int(y), int(r)), bbox, ball_type, number, dominant_hue)) # TODO: Remove (OLD)
 
     balls = handle_duplicate_balls(balls) # FIXME: Currently not working well
+
+    # Save output for debugging
+    output_img = image.copy()
+    for ball in balls:
+        (x1, y1, x2, y2) = ball.bbox
+        number = ball.number
+
+        # Draw ROI bounding box
+        cv2.rectangle(output_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+        # Place the detected number slightly below the ROI
+        label = "?" if number is None else str(number)
+        text_x = x1
+        text_y = min(output_img.shape[0] - 5, y2 + 20)
+        cv2.putText(output_img, label, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2, cv2.LINE_AA)
+    save_debug_image(output_img, img_name, "debug/number_identification")
 
     return balls
 
