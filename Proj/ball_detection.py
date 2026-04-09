@@ -5,9 +5,9 @@ from debug import save_debug_image
 from warp_table import warp_table, order_points_clockwise
 
 
-def get_table_width_height(image, image_name, output_dir, debugOutput):
+def get_table_width_height(image, image_name, output_dir):
     # Create the table mask
-    table_mask, quad = warp_table(image, image_name, output_dir, debugOutput)
+    table_mask, quad = warp_table(image, image_name, output_dir)
 
     # Order corner points consistently (tl, tr, br, bl) top-left, top-right...
     src = order_points_clockwise(quad)
@@ -58,13 +58,13 @@ def detect_balls(image, image_name, output_dir, debugOutput):
     POOL_TABLE_BALL_RATIO = POOL_BALL_DIAMETER/POOL_TABLE_LENGTH
 
     # Warp the table and get the transformation matrix
-    width, height = get_table_width_height(image, image_name, output_dir, debugOutput)
+    width, height = get_table_width_height(image, image_name, output_dir)
 
     # Pool tables have width > height so we can identify the size by checking which is the biggest number:
     if (height > width):
         width = height
 
-    table_mask, quad = warp_table(image, image_name, output_dir, debugOutput)
+    table_mask, quad = warp_table(image, image_name, output_dir)
     ima = cv2.bitwise_and(image, image, mask=table_mask)
 
     # Before applying the HoughCircles we need to convert the image to grayscale
@@ -89,10 +89,6 @@ def detect_balls(image, image_name, output_dir, debugOutput):
 
     # Draw the detected balls on the original angled image
     output_image = image.copy()
-    
-    # We need the inverse matrix to project coordinates back to original image
-    #H_inv = np.linalg.inv(H)
-    
     resultingCircles = []
 
     if circles is not None:
