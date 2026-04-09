@@ -23,6 +23,20 @@ def read_image(images, image_index):
     image_name = os.path.basename(full_path)
  
     return img_pool_table, image_name
+""" 
+def remove_shadows_colored(image, blur_kernel=51):
+    # Use LAB luminance normalization to reduce uneven illumination while preserving colors.
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+    l_channel, a_channel, b_channel = cv2.split(lab)
+
+    # Estimate smooth background illumination from luminance.
+    bg = cv2.medianBlur(l_channel, blur_kernel)
+
+    # Normalize luminance against the estimated background.
+    l_norm = cv2.divide(l_channel, bg, scale=255)
+
+    normalized = cv2.merge((l_norm, a_channel, b_channel))
+    return cv2.cvtColor(normalized, cv2.COLOR_LAB2BGR) """
 
 def order_points_clockwise(pts):
     pts = np.asarray(pts, dtype=np.float32)
@@ -214,28 +228,28 @@ def detect_balls(image, image_name, output_dir, debugOutput):
     if circles is not None:
         circles = np.uint16(np.around(circles))
         hsv_image = cv2.cvtColor(image.copy(), cv2.COLOR_BGR2HSV)
+        near_black_value_threshold = 62
         for circle_idx, i in enumerate(circles[0, :], start=1):
             x, y, r = i[0], i[1], i[2]
 
             # Crop the image to just the detected circle.
             (hsv_image_cropped, _) = crop_ball_roi(hsv_image, x, y, 10, pad=0)
-
-            if debugOutput:
-
-                base_name = os.path.splitext(image_name)[0]
-                hue_debug_path = os.path.join(output_dir, f"{base_name}_hue_image_cropped_{circle_idx:02d}.png")
-                cv2.imwrite(hue_debug_path, cv2.cvtColor(hsv_image_cropped, cv2.COLOR_HSV2BGR))
-                print(f"[DEBUG] hue_image_cropped saved in: {hue_debug_path}")
-
-            hue_image_cropped = hsv_image_cropped[:, :, 0]
-            hue_values = hue_image_cropped
+            hue_values = hsv_image_cropped[:, :, 0]
 
             # Find the dominant hue
             hist, bins = np.histogram(hue_values, bins=180, range=(0, 180))
             dominant_hue = np.argmax(hist)
+            value_values = hsv_image_cropped[:, :, 2]
+            mean_value = float(np.mean(value_values))
+            is_near_black = mean_value <= near_black_value_threshold
 
+            if debugOutput:
+                base_name = os.path.splitext(image_name)[0]
+                hue_debug_path = os.path.join(output_dir, f"{base_name}_hue_image_cropped_{circle_idx:02d}.png")
+                cv2.imwrite(hue_debug_path, cv2.cvtColor(hsv_image_cropped, cv2.COLOR_HSV2BGR))
+                print(f"[DEBUG] hue_image_cropped saved in: {hue_debug_path} and dominant hue is {dominant_hue}, mean V is {mean_value:.1f}, near_black={is_near_black}")
 
-            if dominant_hue > 90 and dominant_hue < 103:
+            if (dominant_hue > 90 and dominant_hue < 103) and (not is_near_black):
                 print(f"Color is {dominant_hue}")
                 continue
 
@@ -254,16 +268,13 @@ def detect_balls(image, image_name, output_dir, debugOutput):
     
     return resultingCircles
 
-
-
-
 images = read_from_json(json_input)
 
-table_image, img_name = read_image(images, 5)
-detect_balls(table_image, img_name, output_dir="output", debugOutput=True)
+#table_image, img_name = read_image(images, 5)
+#detect_balls(table_image, img_name, output_dir="output", debugOutput=True)
 
-""" for i in range(len(images)):
+for i in range(len(images)):
     table_image, img_name = read_image(images, i)
 
     #warp_table(table_image, img_name, output_dir="output")
-    print(detect_balls(table_image, img_name, output_dir="output", debugOutput=False)) """
+    detect_balls(table_image, img_name, output_dir="output", debugOutput=False)
