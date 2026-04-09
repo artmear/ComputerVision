@@ -1,0 +1,11 @@
+output
+example_json
+bin
+output_debug
+__pycache__
+share
+etc
+lib
+debug
+pyvenv.cfg
+.DS_Store
