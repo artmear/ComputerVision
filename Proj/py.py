@@ -1,12 +1,18 @@
+from turtle import color
+
 import numpy as np
 import cv2
 import os
 import json
+import matplotlib.pyplot as plt
 
 from ball_detection import detect_balls
 from warp_table import warp_table
+from number_detection import detect_ball_numbers, show_detected_balls_on_image
 
 json_input = "example_json/input.json"
+
+DEBUG_IMG_NUM = 6
 
 def read_from_json(input_dir):
     with open(input_dir) as json_data:
@@ -27,9 +33,19 @@ def read_image(images, image_index):
 
 
 images = read_from_json(json_input)
-for i in range(len(images)):
+""" for i in range(len(images)):
     table_image, img_name = read_image(images, i)
 
     #warp_table(table_image, img_name, output_dir="output")
     detect_balls(table_image, img_name, output_dir="output", debugOutput=False)
-    warp_table(table_image, img_name, output_dir="output")
+    warp_table(table_image, img_name, output_dir="output") """
+
+
+##### Ball detection #####
+table_image, img_name = read_image(images, DEBUG_IMG_NUM)
+circles = detect_balls(table_image, img_name, output_dir="output", debugOutput=False)
+
+
+##### Number identification #####
+balls = detect_ball_numbers(table_image, circles)
+show_detected_balls_on_image(table_image, balls)

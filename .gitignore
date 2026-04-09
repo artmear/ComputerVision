@@ -1,5 +1,14 @@
 .venv
+<<<<<<< HEAD
 __pycache__/
 *.py[cod]
 output_debug
 output
+=======
+Proj/ball_test.png
+Proj/ball_test2.png
+Proj/debug
+Proj/output
+Proj/__pycache__
+Proj/output_debug
+>>>>>>> feat/numbers
