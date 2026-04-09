@@ -14,6 +14,8 @@ json_input = "example_json/input.json"
 
 DEBUG_IMG_NUM = 6
 
+DEBUG_ALL = 1
+
 def read_from_json(input_dir):
     with open(input_dir) as json_data:
         return json.load(json_data)["image_path"]
@@ -33,19 +35,21 @@ def read_image(images, image_index):
 
 
 images = read_from_json(json_input)
-""" for i in range(len(images)):
-    table_image, img_name = read_image(images, i)
 
-    #warp_table(table_image, img_name, output_dir="output")
-    detect_balls(table_image, img_name, output_dir="output", debugOutput=False)
-    warp_table(table_image, img_name, output_dir="output") """
+if not DEBUG_ALL:
+    ##### Ball detection #####
+    table_image, img_name = read_image(images, DEBUG_IMG_NUM)
+    circles = detect_balls(table_image, img_name, output_dir="output", debugOutput=False)
 
-
-##### Ball detection #####
-table_image, img_name = read_image(images, DEBUG_IMG_NUM)
-circles = detect_balls(table_image, img_name, output_dir="output", debugOutput=False)
+    ##### Number identification #####
+    balls = detect_ball_numbers(table_image, circles, img_name)
+    show_detected_balls_on_image(table_image, balls)
 
 
-##### Number identification #####
-balls = detect_ball_numbers(table_image, circles)
-show_detected_balls_on_image(table_image, balls)
+##### DEBUG All Loop ####
+if DEBUG_ALL:
+    for i in range(len(images)):    
+        table_image, img_name = read_image(images, i)
+        circles = detect_balls(table_image, img_name, output_dir="output", debugOutput=False)
+        balls = detect_ball_numbers(table_image, circles, img_name)
+        warp_table(table_image, img_name, output_dir="output") 
