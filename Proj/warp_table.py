@@ -328,7 +328,7 @@ def save_debug_pipeline(
     cv2.imwrite(debug_path, debug_panel)
     print(f"[DEBUG] pipeline saved in: {debug_path}")
 
-def warp_table(image, image_name, output_dir, debugOutput = True):
+def warp_table(image, image_name, output_dir):
     os.makedirs(output_dir, exist_ok=True)
 
     # Convert image to HSV and isolate blue table cloth
@@ -355,12 +355,66 @@ def warp_table(image, image_name, output_dir, debugOutput = True):
     table_mask = np.zeros_like(blue_only)
     cv2.drawContours(table_mask, [quad], -1, 255, thickness=cv2.FILLED)
 
-    # Save debug visualization of the table mask
-    visualize_table_mask_debug(
+    # Order corner points consistently (tl, tr, br, bl) top-left, top-right...
+    src = order_points_clockwise(quad)
+    (tl, tr, br, bl) = src
+
+    # Provisional square warp to infer orientation from middle-pocket darkness
+    probe_side = 500
+    dst_probe = np.array([
+        [0, 0],
+        [probe_side - 1, 0],
+        [probe_side - 1, probe_side - 1],
+        [0, probe_side - 1]
+    ], dtype=np.float32)
+    H_probe = cv2.getPerspectiveTransform(src, dst_probe)
+    warped_probe = cv2.warpPerspective(image, H_probe, (probe_side, probe_side))
+    orientation, score_horizontal, score_vertical, sample_boxes = get_correct_orientation(warped_probe)
+
+    # Compute output size as 1:1 (square)
+    widthA = np.linalg.norm(br - bl)
+    widthB = np.linalg.norm(tr - tl)
+    heightA = np.linalg.norm(tr - br)
+    heightB = np.linalg.norm(tl - bl)
+    side = max(1, int(max(widthA, widthB, heightA, heightB)))
+
+    # Define destination points for bird's-eye view transform
+    dst = np.array([
+        [0, 0],
+        [side - 1, 0],
+        [side - 1, side - 1],
+        [0, side - 1]
+    ], dtype=np.float32)
+
+    # Compute perspective transform and warp image
+    H = cv2.getPerspectiveTransform(src, dst)
+    warped = cv2.warpPerspective(image, H, (side, side))
+
+    # If middle pockets were detected at left/right, rotate to horizontal layout
+    if orientation == "VERTICAL":
+        warped = cv2.rotate(warped, cv2.ROTATE_90_CLOCKWISE)
+
+    save_debug_pipeline(
         image=image,
         image_name=image_name,
         output_dir="debug/table_mask",
+        blue_mask=blue_mask,
+        blue_only=blue_only,
+        hull=hull,
+        quad=quad,
         table_mask=table_mask,
+        warped_probe=warped_probe,
+        warped_final=warped,
+        orientation=orientation,
+        score_horizontal=score_horizontal,
+        score_vertical=score_vertical,
+        sample_boxes=sample_boxes,
     )
+
+    # Save warped result
+    base_name = os.path.splitext(image_name)[0]
+    warped_path = os.path.join(output_dir, f"{base_name}_warped_table.jpg")
+    cv2.imwrite(warped_path, warped)
+    print(f"[INFO] warped table saved in: {warped_path}")
 
     return (table_mask, quad)
