@@ -26,6 +26,13 @@ class Ball:
         self.dominant_hue = dominant_hue    # hue value used for detection
         self.histogram = histogram          # hue histogram for debugging/confidence analysis
 
+    def to_dict(self):
+        """Convert Ball object to a dictionary suitable for JSON serialization."""
+        return {
+            "number": self.number,
+            # TODO: Add more if needed
+        }
+
 
 
 """ This function extracts the dominant hue value of an HSV image, by using histogram analysis """
