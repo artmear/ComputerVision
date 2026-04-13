@@ -1,9 +1,5 @@
 import numpy as np
 import cv2
-import matplotlib.pyplot as plt
-import os
-import json
-import math
 from debug import debug_dominant_color, show_detected_balls_on_image, save_debug_image
 
 # Color hue ranges
@@ -19,19 +15,25 @@ UPPER_PURPLE_HUE = 155
 
 # Ball class to store all relevant information about each detected ball
 class Ball:
-    def __init__(self, circle_params, bbox, ball_type, number, dominant_hue, histogram=None):
-        self.circle_params = circle_params  # (x, y, r)
-        self.bbox = bbox                    # (x1, y1, x2, y2)
-        self.ball_type = ball_type          # solid or striped
-        self.number = number                # detected ball number
-        self.dominant_hue = dominant_hue    # hue value used for detection
-        self.histogram = histogram          # hue histogram for debugging/confidence analysis
+    def __init__(self, circle_params, bbox, ball_type, number, dominant_color=None, xmin=None, xmax=None, ymin=None, ymax=None):
+        self.circle_params = circle_params    # (x, y, r)
+        self.bbox = bbox                      # (x1, y1, x2, y2)
+        self.ball_type = ball_type            # solid or striped
+        self.number = number                  # detected ball number
+        self.dominant_color = dominant_color  # Detected dominant color in HSV (for debugging)
+        self.xmin = xmin
+        self.xmax = xmax
+        self.ymin = ymin
+        self.ymax = ymax
 
     def to_dict(self):
         """Convert Ball object to a dictionary suitable for JSON serialization."""
         return {
             "number": self.number,
-            # TODO: Add more if needed
+            "xmin" : self.xmin,
+            "xmax" : self.xmax,
+            "ymin" : self.ymin,
+            "ymax" : self.ymax
         }
 
 
@@ -61,9 +63,10 @@ def is_striped_ball(hsv_img):
     white_px = (middle_band[:, :, 1] < 40) & (middle_band[:, :, 2] > 100)
     white_ratio = np.sum(white_px) / (middle_band.shape[0] * middle_band.shape[1])
     
-    # DEBUG # TODO: Remove
     is_striped = white_ratio > 0.05  # If >5% of middle band is white-ish
-    print(f"  Stripe check - white_ratio in middle band: {white_ratio:.3f}, is_striped: {is_striped}")
+    
+    # DEBUG # TODO: Remove
+    #print(f"  Stripe check - white_ratio in middle band: {white_ratio:.3f}, is_striped: {is_striped}") 
     
     return is_striped
 
@@ -132,19 +135,14 @@ def color_to_ball_number(dominant_color, is_striped):
     
     h, s, v = dominant_color[0][0]  # Extract HSV values
     
-    # Map color ranges to ball numbers
-    # Solid colors: 1=yellow, 2=blue, 3=red, 4=purple, 5=orange, 6=green, 7=brown
-    # Striped (add 8): 9=yellow, 10=blue, 11=red, 12=purple, 13=orange, 14=green, 15=brown
-    # Special: 8=black (no striped version)
-    
+    # Map color ranges to ball numbers   
     color_match = None
-    
-    # White/Cue ball detection (relaxed)
+
+    # White/Cue ball detection (very low saturation, high brightness)
     if s < 50 and v > 180:
         color_match = "white"
     # Black (check before colors to avoid false positives)
-    # Black key indicator: LOW brightness (V < 120), saturation can vary after calibration
-    elif v < 120:
+    elif v < 120: # Black key indicator: LOW brightness (V < 120), saturation can vary after calibration
         color_match = "black"
     # Red (wraps around hue range)
     elif (h <= UPPER_RED_HUE or h >= LOWER_RED_HUE) and s > 40:
@@ -186,7 +184,7 @@ def color_to_ball_number(dominant_color, is_striped):
     
     base_number = color_to_number[color_match]
     
-    # Striped balls are numbered 9-15 (base + 8, but only for colors 1-7)
+    # Striped balls are numbered base number + 8
     if is_striped and 1 <= base_number <= 7:
         return base_number + 8
     
@@ -198,9 +196,6 @@ def color_to_ball_number(dominant_color, is_striped):
 def detect_ball_color(ball_roi):
     hsv_img = cv2.cvtColor(ball_roi, cv2.COLOR_BGR2HSV)
 
-    # Special cases first
-    # FIXME: This algorithm currently struggles with striped, brownish, black and white balls.
-
     # Stripe detection uses the unfiltered mask
     is_striped = is_striped_ball(hsv_img)
 
@@ -208,14 +203,11 @@ def detect_ball_color(ball_roi):
     circular_mask = get_circular_mask(hsv_img, 0.45)
     dominant_color = get_dominant_color(hsv_img, circular_mask)
     number = color_to_ball_number(dominant_color, is_striped)
-    #dominant_hue, histogram = get_dominant_hue(hsv_img, color_mask)
-    #number = hue_to_ball_number(dominant_hue, is_striped)
 
-    # DEBUG: Print HSV values for each ball
-    h, s, v = dominant_color[0][0]
-    print(f"Ball detected - H:{h}, S:{s}, V:{v} | Striped:{is_striped} | Number:{number}")
-
-    debug_dominant_color(ball_roi, hsv_img, circular_mask, dominant_color) # TODO: Remove (DEBUG)
+    # TODO: DEBUG (Remove later)
+    #h, s, v = dominant_color[0][0]
+    #print(f"Ball detected - H:{h}, S:{s}, V:{v} | Striped:{is_striped} | Number:{number}") 
+    #debug_dominant_color(ball_roi, hsv_img, circular_mask, dominant_color) 
 
     return is_striped, number, dominant_color
 
@@ -236,39 +228,43 @@ def crop_ball_roi(image, x, y, r, pad=4):
     return roi, (x1, y1, x2, y2)
 
 
+
 """ Main function to detect all balls numbers and types. Return their types and numbers """
-def detect_ball_numbers(image, circles, img_name):
+def detect_ball_numbers(image, circles, img_name, debug=False):
     # Apply white balance calibration using detected cue ball
     image = calibrate_white_balance(image, circles)
     
+    h, w = image.shape[:2]
     balls = []
   
     # For each detected circle, crop the ROI, detect color and type, and store results in a Ball object
     for (x, y, r) in circles:
         ball_roi, bbox = crop_ball_roi(image, x, y, r)
+        xmin = bbox[0]/w
+        xmax = bbox[2]/w
+        ymin = bbox[1]/h
+        ymax = bbox[3]/h
         if ball_roi.size == 0:
             continue
         ball_type, number, dominant_color = detect_ball_color(ball_roi)
-        balls.append(Ball((int(x), int(y), int(r)), bbox, ball_type, number, dominant_color))
-        #balls.append(((int(x), int(y), int(r)), bbox, ball_type, number, dominant_color)) # TODO: Remove (OLD)
-
-    #balls = handle_duplicate_balls(balls) # FIXME: Currently not working well
+        balls.append(Ball((int(x), int(y), int(r)), bbox, ball_type, number, dominant_color, xmin, xmax, ymin, ymax))
 
     # Save output for debugging
-    output_img = image.copy()
-    for ball in balls:
-        (x1, y1, x2, y2) = ball.bbox
-        number = ball.number
+    if debug:
+        output_img = image.copy()
+        for ball in balls:
+            (x1, y1, x2, y2) = ball.bbox
+            number = ball.number
 
-        # Draw ROI bounding box
-        cv2.rectangle(output_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            # Draw ROI bounding box
+            cv2.rectangle(output_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
-        # Place the detected number slightly below the ROI
-        label = "?" if number is None else str(number)
-        text_x = x1
-        text_y = min(output_img.shape[0] - 5, y2 + 20)
-        cv2.putText(output_img, label, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2, cv2.LINE_AA)
-    save_debug_image(output_img, img_name, "debug/number_identification")
+            # Place the detected number slightly below the ROI
+            label = "?" if number is None else str(number)
+            text_x = x1
+            text_y = min(output_img.shape[0] - 5, y2 + 20)
+            cv2.putText(output_img, label, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2, cv2.LINE_AA)
+        save_debug_image(output_img, img_name, "debug/number_identification")
 
     return balls
 
