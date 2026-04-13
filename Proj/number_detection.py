@@ -51,15 +51,21 @@ def is_striped_ball(hsv_img):
     # Stripes = significant white band across the middle of the ball.
     h, w = hsv_img.shape[:2]
     
-    # Use full ball mask, no saturation filtering
-    full_mask = get_circular_mask(hsv_img, 0.45)
+    # Check the middle horizontal band of the ball for white pixels
+    # Stripes typically run horizontally across the middle
+    band_start = int(h * 0.35)
+    band_end = int(h * 0.65)
+    middle_band = hsv_img[band_start:band_end, :]
     
-    # Look for white pixels (low saturation, high brightness)
-    white_px = (hsv_img[:, :, 1] < 50) & (hsv_img[:, :, 2] > 160) & full_mask.astype(bool)
-    white_ratio = np.sum(white_px) / np.sum(full_mask)
+    # Look for white pixels in the band (very low saturation)
+    white_px = (middle_band[:, :, 1] < 40) & (middle_band[:, :, 2] > 100)
+    white_ratio = np.sum(white_px) / (middle_band.shape[0] * middle_band.shape[1])
     
-    # Stripes have a notable white band
-    return 0.10 < white_ratio < 0.65  # upper bound avoids misclassifying near-cue-ball whites
+    # DEBUG # TODO: Remove
+    is_striped = white_ratio > 0.05  # If >5% of middle band is white-ish
+    print(f"  Stripe check - white_ratio in middle band: {white_ratio:.3f}, is_striped: {is_striped}")
+    
+    return is_striped
 
 
 
@@ -137,7 +143,8 @@ def color_to_ball_number(dominant_color, is_striped):
     if s < 50 and v > 180:
         color_match = "white"
     # Black (check before colors to avoid false positives)
-    elif s < 80 and v < 100:
+    # Black key indicator: LOW brightness (V < 120), saturation can vary after calibration
+    elif v < 120:
         color_match = "black"
     # Red (wraps around hue range)
     elif (h <= UPPER_RED_HUE or h >= LOWER_RED_HUE) and s > 40:
@@ -204,7 +211,11 @@ def detect_ball_color(ball_roi):
     #dominant_hue, histogram = get_dominant_hue(hsv_img, color_mask)
     #number = hue_to_ball_number(dominant_hue, is_striped)
 
-    #debug_dominant_color(ball_roi, hsv_img, circular_mask, dominant_color) # TODO: Remove (DEBUG)
+    # DEBUG: Print HSV values for each ball
+    h, s, v = dominant_color[0][0]
+    print(f"Ball detected - H:{h}, S:{s}, V:{v} | Striped:{is_striped} | Number:{number}")
+
+    debug_dominant_color(ball_roi, hsv_img, circular_mask, dominant_color) # TODO: Remove (DEBUG)
 
     return is_striped, number, dominant_color
 
