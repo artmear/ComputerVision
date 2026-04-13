@@ -197,30 +197,53 @@ def select_table_quad(hull, image_shape, right_angle_tolerance_deg=25.0):
     return cv2.boxPoints(rect).astype(np.int32).reshape(-1, 1, 2)
 
 def compute_topview_homography(quad):
-    src = order_points_clockwise(quad)  # tl, tr, br, bl
+    src = order_points_clockwise(quad)   # tl, tr, br, bl
     tl, tr, br, bl = src
 
-    side = int(round(np.mean([
-        np.linalg.norm(tr - tl),
-        np.linalg.norm(br - bl),
-        np.linalg.norm(tr - br),
-        np.linalg.norm(tl - bl),
-    ])))
+    top_len    = float(np.linalg.norm(tr - tl))
+    bottom_len = float(np.linalg.norm(br - bl))
+    left_len   = float(np.linalg.norm(bl - tl))
+    right_len  = float(np.linalg.norm(br - tr))
+
+    h_ratio_base = max(top_len, bottom_len) / max(min(top_len, bottom_len), 1.0)
+    v_ratio_base = max(left_len, right_len) / max(min(left_len, right_len), 1.0)
+
+    AMPLIFIER = 1.8
+
+    h_ratio = h_ratio_base ** AMPLIFIER
+    v_ratio = v_ratio_base ** AMPLIFIER
+
+    avg_h_adjusted = ((top_len + bottom_len) / 2.0) * v_ratio
+    avg_v_adjusted = ((left_len + right_len) / 2.0) * h_ratio
+
+    print(avg_h_adjusted)
+    print(avg_v_adjusted)
+
+    if avg_v_adjusted > avg_h_adjusted:
+        src_reordered = np.array([bl, tl, tr, br], dtype=np.float32)
+        short_side = int(round((top_len + bottom_len) / 2.0))
+    else:
+        src_reordered = src
+        short_side = int(round((left_len + right_len) / 2.0))
+
+    width  = short_side * 2
+    height = short_side
 
     dst = np.array([
-        [0,        0       ],
-        [side - 1, 0       ],
-        [side - 1, side - 1],
-        [0,        side - 1],
+        [0,         0         ],
+        [width - 1, 0         ],
+        [width - 1, height - 1],
+        [0,         height - 1],
     ], dtype=np.float32)
 
-    H, _ = cv2.findHomography(src, dst, method=0)
-    return H, (side, side)
+    H, _ = cv2.findHomography(src_reordered, dst, method=0)
+    return H, (width, height)
 
 def compute_per_side_padding(quad, dst_size, padding_min=0.06, padding_max=0.1):
     src = order_points_clockwise(quad)
     tl, tr, br, bl = src
-    side = dst_size[0]
+
+    ref = dst_size[1]
 
     top_len = np.linalg.norm(tr - tl)
     bottom_len = np.linalg.norm(br - bl)
@@ -231,7 +254,7 @@ def compute_per_side_padding(quad, dst_size, padding_min=0.06, padding_max=0.1):
         ratio = edge_len / (opposite_len + 1e-6)
         t = float(np.clip((ratio - 1.0), 0.0, 1.0))
         frac = padding_max - t * (padding_max - padding_min)
-        return int(round(side * frac))
+        return int(round(ref * frac))
 
     pad_top = _pad(top_len, bottom_len)
     pad_bottom = _pad(bottom_len, top_len)
