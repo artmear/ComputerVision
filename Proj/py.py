@@ -12,7 +12,7 @@ OUTPUT_DIR = "output" # TODO: Change this to the desired output directory
 
 # Debug
 DEBUG = 1
-DEBUG_OPTION = None
+DEBUG_OPTION = 42
 DEBUG_OUTPUT_DIR = "debug" 
 
 
