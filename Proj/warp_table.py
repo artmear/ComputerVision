@@ -479,6 +479,10 @@ def warp_table(image, image_name, output_dir):
         (padded_w, padded_h)
     )
 
+    base_name = os.path.splitext(os.path.basename(image_name))[0]
+    save_path = os.path.join(output_dir, f"{base_name}.jpg")
+    cv2.imwrite(save_path, topview)
+
     if DEBUG:
         save_debug_pipeline(
             image=image,
