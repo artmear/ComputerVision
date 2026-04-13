@@ -20,8 +20,8 @@ def save_debug_image(image, image_name, output_dir):
     cv2.imwrite(debug_path, image)
     print(f"[DEBUG] image saved in: {debug_path}")
 
-def debug_dominant_color(ball_roi, hsv_img, mask, dominant_hue):
-    # Display original ROI, mask, hue histogram, and a swatch of the detected dominant hue.
+def debug_dominant_color(ball_roi, hsv_img, mask, dominant_color):
+    # Display original ROI, mask, hue histogram, and a swatch of the detected dominant color.
     masked_hue = hsv_img[:, :, 0][mask.astype(bool)]
     plt.figure(figsize=(18, 4))
     plt.subplot(1, 4, 1)
@@ -36,21 +36,22 @@ def debug_dominant_color(ball_roi, hsv_img, mask, dominant_hue):
 
     plt.subplot(1, 4, 3)
     plt.hist(masked_hue, bins=180, range=(0, 180), color='blue', alpha=0.7)
-    plt.axvline(dominant_hue, color='red', linestyle='--', label=f'Dominant Hue: {dominant_hue}')
+    h, s, v = dominant_color[0][0]
+    plt.axvline(h, color='red', linestyle='--', label=f'Dominant Hue: {h}')
     plt.title("Hue Histogram of Masked Region")
     plt.xlabel("Hue Value")
     plt.ylabel("Pixel Count")
     plt.legend()
 
     plt.subplot(1, 4, 4)
-    if dominant_hue < 0:
+    if dominant_color is None:
         swatch_rgb = np.full((120, 120, 3), 128, dtype=np.uint8)
         swatch_title = "Dominant Color: N/A"
     else:
-        hsv_color = np.uint8([[[dominant_hue, 255, 255]]])
-        swatch_rgb = cv2.cvtColor(hsv_color, cv2.COLOR_HSV2RGB)[0][0]
+        h, s, v = dominant_color[0][0]
+        swatch_rgb = cv2.cvtColor(dominant_color, cv2.COLOR_HSV2RGB)[0][0]
         swatch_rgb = np.full((120, 120, 3), swatch_rgb, dtype=np.uint8)
-        swatch_title = f"Dominant Color (Hue={dominant_hue})"
+        swatch_title = f"Dominant Color (H={h}, S={s}, V={v})"
     plt.imshow(swatch_rgb)
     plt.title(swatch_title)
     plt.axis("off")

@@ -16,6 +16,7 @@ UPPER_GREEN_HUE = 85
 UPPER_BLUE_HUE = 130
 UPPER_PURPLE_HUE = 155
 
+
 # Ball class to store all relevant information about each detected ball
 class Ball:
     def __init__(self, circle_params, bbox, ball_type, number, dominant_hue, histogram=None):
@@ -35,39 +36,13 @@ class Ball:
 
 
 
-""" This function extracts the dominant hue value of an HSV image, by using histogram analysis """
-def get_dominant_hue(hsv, combined_mask):
-    hist = None
-    hue_values = hsv[:, :, 0][combined_mask.astype(bool)]
-    if len(hue_values) == 0:
-        dominant_hue = -1  # cue ball or bad mask
-    else:
-        # Use histogram to find dominant hue (more robust than mean)
-        hist, bins = np.histogram(hue_values, bins=180, range=(0, 180))
-        dominant_hue = np.argmax(hist)
-    return dominant_hue, hist
-
-
-
-""" Map the detected dominant hue and stripe presence to a specific ball number."""
-def hue_to_ball_number(hue, is_striped):
-    if hue is None: # Cue ball (white)
-        return 0  
-
-    # Solid balls: 1-8 | Striped balls: 9-15 (same colors, +8)
-    offset = 8 if is_striped else 0
-
-    # opencv hue ranges from 0-179
-    if hue < UPPER_RED_HUE or hue >  LOWER_RED_HUE:    return 3 + offset   # Red
-    elif UPPER_RED_HUE     <= hue <  UPPER_BROWN_HUE:  return 7 + offset  # Brown
-    elif UPPER_BROWN_HUE   <= hue <  UPPER_ORANGE_HUE: return 5 + offset  # Orange
-    elif UPPER_ORANGE_HUE  <= hue <  UPPER_YELLOW_HUE: return 1 + offset  # Yellow
-    elif UPPER_YELLOW_HUE  <= hue <  UPPER_GREEN_HUE:  return 6 + offset  # Green
-    elif UPPER_GREEN_HUE   <= hue <  UPPER_BLUE_HUE:   return 2 + offset  # Blue
-    elif UPPER_BLUE_HUE    <= hue <= UPPER_PURPLE_HUE: return 4 + offset  # Purple
-    elif UPPER_PURPLE_HUE  <= hue <= LOWER_RED_HUE:    return 3 + offset  # Red (wraps around)
-    else:
-        return -1  # Unknown
+"""Calculate dominant color by averaging in RGB space (avoids hue wrapping issues)."""
+def get_dominant_color(hsv_img, mask):
+    bgr_img = cv2.cvtColor(hsv_img, cv2.COLOR_HSV2BGR)
+    mean_bgr = cv2.mean(bgr_img, mask=mask)[:3]
+    mean_bgr = np.uint8([[mean_bgr]])
+    mean_hsv = cv2.cvtColor(mean_bgr, cv2.COLOR_BGR2HSV)
+    return mean_hsv
 
 
 
@@ -88,21 +63,127 @@ def is_striped_ball(hsv_img):
 
 
 
-""" Mask for hue analysis: exclude glare, white stripe, and very dark pixels."""
-def get_color_mask(hsv_img):
-    mask = get_circular_mask(hsv_img, 0.42)
-    brightness_ok  = (hsv_img[:, :, 2] > 40) & (hsv_img[:, :, 2] < 235)
-    saturation_ok  = hsv_img[:, :, 1] > 45
-    return mask & brightness_ok & saturation_ok
-
-
-
 """ Create a circular mask for the given HSV image """
 def get_circular_mask(hsv, radius_fraction=0.45):
     h, w = hsv.shape[:2]
     mask = np.zeros((h, w), dtype=np.uint8)
     cv2.circle(mask, (w // 2, h // 2), int(min(w, h) * radius_fraction), 255, -1)
     return mask
+
+
+
+""" Calibrate white balance using the cue ball (white ball) as reference. Assumes the brightest, least saturated ball is the cue ball. """
+def calibrate_white_balance(bgr_image, circles, pad=4):
+    if circles is None or len(circles) == 0:
+        return bgr_image  # No circles, return original
+        
+    # Find the whitest ball (lowest saturation + highest brightness)
+    white_ball_candidate = None
+    best_white_score = -1
+    
+    for (x, y, r) in circles:
+        roi, _ = crop_ball_roi(bgr_image, x, y, r, pad=pad)
+        if roi.size == 0:
+            continue
+        
+        roi_hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+        mask = get_circular_mask(roi_hsv, 0.4)
+        
+        # Score: high brightness, low saturation
+        avg_s = cv2.mean(roi_hsv[:, :, 1], mask=mask)[0]
+        avg_v = cv2.mean(roi_hsv[:, :, 2], mask=mask)[0]
+        
+        white_score = avg_v - avg_s  # Higher is whiter
+        
+        if white_score > best_white_score:
+            best_white_score = white_score
+            white_ball_candidate = roi
+    
+    if white_ball_candidate is None:
+        return bgr_image
+    
+    # Calculate white balance correction using the cue ball
+    gray_white = cv2.cvtColor(white_ball_candidate, cv2.COLOR_BGR2GRAY)
+    target_gray = 255  # Ideal white
+    current_mean = np.mean(gray_white)
+    
+    if current_mean < 10:  # Avoid division by near-zero
+        return bgr_image
+    
+    # Apply correction to entire image
+    scale = target_gray / current_mean
+    calibrated = cv2.convertScaleAbs(bgr_image.astype(np.float32) * scale)
+    calibrated = np.uint8(np.clip(calibrated, 0, 255))
+    
+    return calibrated
+
+
+
+'''Map dominant HSV color to ball number'''
+def color_to_ball_number(dominant_color, is_striped):
+    if dominant_color is None:
+        return None
+    
+    h, s, v = dominant_color[0][0]  # Extract HSV values
+    
+    # Map color ranges to ball numbers
+    # Solid colors: 1=yellow, 2=blue, 3=red, 4=purple, 5=orange, 6=green, 7=brown
+    # Striped (add 8): 9=yellow, 10=blue, 11=red, 12=purple, 13=orange, 14=green, 15=brown
+    # Special: 8=black (no striped version)
+    
+    color_match = None
+    
+    # White/Cue ball detection (relaxed)
+    if s < 50 and v > 180:
+        color_match = "white"
+    # Black (check before colors to avoid false positives)
+    elif s < 80 and v < 100:
+        color_match = "black"
+    # Red (wraps around hue range)
+    elif (h <= UPPER_RED_HUE or h >= LOWER_RED_HUE) and s > 40:
+        color_match = "red"
+    # Brown
+    elif UPPER_RED_HUE < h <= UPPER_BROWN_HUE and s > 30:
+        color_match = "brown"
+    # Orange
+    elif UPPER_BROWN_HUE < h <= UPPER_ORANGE_HUE and s > 40:
+        color_match = "orange"
+    # Yellow
+    elif UPPER_ORANGE_HUE < h <= UPPER_YELLOW_HUE and s > 40:
+        color_match = "yellow"
+    # Green
+    elif UPPER_YELLOW_HUE < h <= UPPER_GREEN_HUE and s > 40:
+        color_match = "green"
+    # Blue
+    elif UPPER_GREEN_HUE < h <= UPPER_BLUE_HUE and s > 40:
+        color_match = "blue"
+    # Purple
+    elif UPPER_BLUE_HUE < h <= UPPER_PURPLE_HUE and s > 30:
+        color_match = "purple"
+    
+    # Map color to ball number
+    color_to_number = {
+        "yellow": 1,
+        "blue":   2,
+        "red":    3,
+        "purple": 4,
+        "orange": 5,
+        "green":  6,
+        "brown":  7,
+        "black":  8,
+        "white":  0  # Cue ball
+    }
+    
+    if color_match not in color_to_number:
+        return None
+    
+    base_number = color_to_number[color_match]
+    
+    # Striped balls are numbered 9-15 (base + 8, but only for colors 1-7)
+    if is_striped and 1 <= base_number <= 7:
+        return base_number + 8
+    
+    return base_number
 
 
 
@@ -116,13 +197,16 @@ def detect_ball_color(ball_roi):
     # Stripe detection uses the unfiltered mask
     is_striped = is_striped_ball(hsv_img)
 
-    color_mask = get_color_mask(hsv_img)
-    dominant_hue, histogram = get_dominant_hue(hsv_img, color_mask)
-    number = hue_to_ball_number(dominant_hue, is_striped)
+    # Detect dominant color and number
+    circular_mask = get_circular_mask(hsv_img, 0.45)
+    dominant_color = get_dominant_color(hsv_img, circular_mask)
+    number = color_to_ball_number(dominant_color, is_striped)
+    #dominant_hue, histogram = get_dominant_hue(hsv_img, color_mask)
+    #number = hue_to_ball_number(dominant_hue, is_striped)
 
-    #debug_dominant_color(ball_roi, hsv_img, color_mask, dominant_hue) # TODO: Remove (DEBUG)
+    #debug_dominant_color(ball_roi, hsv_img, circular_mask, dominant_color) # TODO: Remove (DEBUG)
 
-    return is_striped, number, dominant_hue, histogram
+    return is_striped, number, dominant_color
 
 
 
@@ -141,139 +225,11 @@ def crop_ball_roi(image, x, y, r, pad=4):
     return roi, (x1, y1, x2, y2)
 
 
-
-def get_hue_confidence(ball):
-    """Calculate confidence score (0-1) for hue-based ball detection.
-    
-    High confidence: hue is far from range boundaries (centered in its range)
-    Low confidence: hue is near boundaries (ambiguous/could be another ball)
-    """
-    number = ball.number 
-    dominant_hue = ball.dominant_hue
-    
-    # Invalid cases: no number detected or bad hue value
-    if number is None or number < 0 or dominant_hue is None or dominant_hue < 0:
-        return 0.0
-    
-    # Cue ball (white): always high confidence if detected as 0
-    if number == 0:
-        return 1.0
-    
-    # For numbered balls, find the hue range and calculate distance from boundaries
-    # Distance from closest boundary = confidence (normalized to 0-1)
-    
-    offset = 8 if number > 8 else 0  # striped balls have offset
-    color_number = number - offset   # get base color number (1-8)
-    
-    # Map colors to their hue ranges (based on hue_to_ball_number logic)
-    hue_ranges = {
-        1: (UPPER_ORANGE_HUE, UPPER_YELLOW_HUE),    # Yellow
-        2: (UPPER_GREEN_HUE, UPPER_BLUE_HUE),       # Blue
-        3: (UPPER_RED_HUE, UPPER_BROWN_HUE),        # Red (or LOWER_RED_HUE to 180)
-        4: (UPPER_BLUE_HUE, UPPER_PURPLE_HUE),      # Purple
-        5: (UPPER_BROWN_HUE, UPPER_ORANGE_HUE),     # Orange
-        6: (UPPER_YELLOW_HUE, UPPER_GREEN_HUE),     # Green
-        7: (UPPER_RED_HUE, UPPER_BROWN_HUE),        # Brown
-    }
-    
-    if color_number not in hue_ranges:
-        return 0.5  # Unknown color, medium confidence
-    
-    lower, upper = hue_ranges[color_number]
-    
-    # Special case: red wraps around (0-10 and 165-179)
-    if color_number == 3:
-        # Check if hue is closer to lower or upper part of red range
-        dist_to_lower = dominant_hue
-        dist_to_upper = LOWER_RED_HUE - dominant_hue
-        min_dist = min(dist_to_lower, dist_to_upper)
-        range_width = (180 - LOWER_RED_HUE) + UPPER_RED_HUE
-    else:
-        min_dist = min(dominant_hue - lower, upper - dominant_hue)
-        range_width = upper - lower
-    
-    # Confidence: distance from nearest boundary, normalized by range width
-    # Max when centered, decreases toward boundaries
-    if range_width <= 0:
-        return 0.5
-    
-    confidence = max(0.0, 1.0 - (abs(min_dist) / (range_width / 2.0)))
-    return confidence
-
-
-
-def get_second_best_number(ball):
-    number, dominant_hue, hist = ball.number, ball.dominant_hue, ball.histogram
-    
-    # No histogram data, cannot determine alternative number
-    if hist is None or len(hist) == 0:
-        return None
-    
-    # Get hues sorted by frequency (descending)
-    sorted_hue_indices = np.argsort(hist)[::-1]  # Reverse to get descending order
-    
-    # Skip the first one (dominant hue) and try subsequent peaks
-    for i in range(1, len(sorted_hue_indices)):
-        candidate_hue = sorted_hue_indices[i]
-        candidate_number = hue_to_ball_number(candidate_hue, is_striped=(number > 8))
-        
-        # Return the first alternative that maps to a different number
-        if candidate_number != number and candidate_number is not None and candidate_number >= 0:
-            return candidate_number
-    
-    # No alternative number found
-    return None
-
-
-
-def handle_duplicate_balls(balls):
-    final_balls = []
-
-    # 1. Find duplicate numbers
-    seen_numbers = set()
-    duplicate_numbers = set()
-    for ball in balls:
-        number = ball.number
-        if number in seen_numbers:
-            duplicate_numbers.add(number)
-        seen_numbers.add(number)
-
-    # 2. Find all balls with duplicate numbers
-    all_duplicate_balls = dict()
-    duplicate_balls = []
-    unique_balls = []
-    for ball in balls:
-        number = ball.number
-        if number in duplicate_numbers:
-            all_duplicate_balls[number] = all_duplicate_balls.get(number, []) + [ball] # e.g. {3: [ball1, ball2], 5: [ball3, ball4, ball5]}
-            duplicate_balls.append(ball)
-        else:
-            unique_balls.append(ball)
-
-    print("all_duplicate_balls:", all_duplicate_balls) # TODO: Remove (DEBUG)
-
-    # 3. Compare duplicate balls and rank them by confidence
-    for number, balls_with_same_number in all_duplicate_balls.items():
-        if len(balls_with_same_number) == 1:
-            final_balls.append(balls_with_same_number[0]) # No duplicates, keep as is
-        else:
-            # Sort by confidence (descending)
-            sorted_balls = sorted(balls_with_same_number, key=get_hue_confidence, reverse=True)
-            best_ball = sorted_balls[0]
-            final_balls.append(best_ball) # Keep the most confident ball
-
-            # For the others, we assign a second-best number
-            for other_ball in sorted_balls[1:]:
-                second_best_number = get_second_best_number(other_ball)
-                other_ball.number = second_best_number # Assign second-best number (or set to None)
-                final_balls.append(other_ball)
-
-    final_balls.extend(unique_balls) # Add unique balls that had no duplicates
-    return final_balls
-
-
 """ Main function to detect all balls numbers and types. Return their types and numbers """
 def detect_ball_numbers(image, circles, img_name):
+    # Apply white balance calibration using detected cue ball
+    image = calibrate_white_balance(image, circles)
+    
     balls = []
   
     # For each detected circle, crop the ROI, detect color and type, and store results in a Ball object
@@ -281,11 +237,11 @@ def detect_ball_numbers(image, circles, img_name):
         ball_roi, bbox = crop_ball_roi(image, x, y, r)
         if ball_roi.size == 0:
             continue
-        ball_type, number, dominant_hue, histogram = detect_ball_color(ball_roi)
-        balls.append(Ball((int(x), int(y), int(r)), bbox, ball_type, number, dominant_hue, histogram=histogram))
-        #balls.append(((int(x), int(y), int(r)), bbox, ball_type, number, dominant_hue)) # TODO: Remove (OLD)
+        ball_type, number, dominant_color = detect_ball_color(ball_roi)
+        balls.append(Ball((int(x), int(y), int(r)), bbox, ball_type, number, dominant_color))
+        #balls.append(((int(x), int(y), int(r)), bbox, ball_type, number, dominant_color)) # TODO: Remove (OLD)
 
-    balls = handle_duplicate_balls(balls) # FIXME: Currently not working well
+    #balls = handle_duplicate_balls(balls) # FIXME: Currently not working well
 
     # Save output for debugging
     output_img = image.copy()
