@@ -11,8 +11,8 @@ INPUT_DIR = "example_json/input.json" # TODO: Change this to the desired input j
 OUTPUT_DIR = "output" # TODO: Change this to the desired output directory
 
 # Debug
-DEBUG = 0
-DEBUG_OPTION = 5
+DEBUG = 1
+DEBUG_OPTION = None
 DEBUG_OUTPUT_DIR = "debug" 
 
 
