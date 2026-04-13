@@ -6,51 +6,35 @@ from ball_detection import detect_balls
 from warp_table import warp_table
 from number_detection import detect_ball_numbers, show_detected_balls_on_image
 
+# Input and output
 INPUT_DIR = "example_json/input.json" # TODO: Change this to the desired input json file
 OUTPUT_DIR = "output" # TODO: Change this to the desired output directory
-DEBUG_OUTPUT_DIR = "debug" # TODO: Change this to the desired debug output directory
 
-DEBUG_IMG_NUM = 6
-DEBUG_ALL = 1
+# Debug
+DEBUG = 0
+DEBUG_OPTION = 5
+DEBUG_OUTPUT_DIR = "debug" 
 
+
+''' Reads the image paths from the input json file '''
 def read_from_json(input_dir):
     with open(input_dir) as json_data:
         return json.load(json_data)["image_path"]
  
+
+''' Writes the output data to a json file in the output directory '''
 def write_to_json(output_path, contents):
     os.makedirs(os.path.dirname(output_path), exist_ok=True) # Create the output directory if it doesn't exist
     with open(output_path, "w", encoding="utf-8") as file:
         json.dump(contents, file, ensure_ascii=False, indent=4)
- 
+
+
+''' Reads the image from the given path and returns the image and its name '''
 def read_image(images, image_index):
     full_path = images[image_index]
- 
     img_pool_table = cv2.imread(full_path)
- 
     image_name = os.path.basename(full_path)
- 
     return img_pool_table, image_name
-
-
-images = read_from_json(INPUT_DIR)
-
-if not DEBUG_ALL:
-    ##### Ball detection #####
-    table_image, img_name = read_image(images, DEBUG_IMG_NUM)
-    circles = detect_balls(table_image, img_name, output_dir=DEBUG_OUTPUT_DIR, debugOutput=False)
-
-    ##### Number identification #####
-    balls = detect_ball_numbers(table_image, circles, img_name)
-    show_detected_balls_on_image(table_image, balls)
-
-
-##### DEBUG All Loop ####
-if DEBUG_ALL:
-    for i in range(len(images)):    
-        table_image, img_name = read_image(images, i)
-        circles = detect_balls(table_image, img_name, output_dir=DEBUG_OUTPUT_DIR+"/top_view", debugOutput=False) # FIXME: The output_dir is for warp_table (not ball detection)
-        balls = detect_ball_numbers(table_image, circles, img_name)
-        warp_table(table_image, img_name, output_dir=DEBUG_OUTPUT_DIR+"/top_view") 
 
 
 ''' Entry point for the full detection pipeline
@@ -94,5 +78,24 @@ def run_full_detection(json_input_dir, output_dir):
     write_to_json(output_json_path, output_data_list)
 
 
-
-run_full_detection(INPUT_DIR, OUTPUT_DIR)
+# Three different run configurations:
+# - DEBUG = 1, DEBUG_OPTION = <img_number> -> Run debug for a specific image
+# - DEBUG = 1, DEBUG_OPTION = None         -> Run debug for a all images
+# - DEBUG = 0                              -> Run the entire pipeline normally
+if DEBUG:
+    images = read_from_json(INPUT_DIR)
+    if DEBUG_OPTION is not None: # Debug specific image
+        print(f"[DEBUG] Running debug pipeline for option: {DEBUG_OPTION}")
+        table_image, img_name = read_image(images, DEBUG_OPTION)
+        circles = detect_balls(table_image, img_name, output_dir=DEBUG_OUTPUT_DIR+"/top_view", debugOutput=False) # FIXME: The output_dir is for warp_table (not ball detection)
+        balls = detect_ball_numbers(table_image, circles, img_name) # Detect ball numbers
+        show_detected_balls_on_image(table_image, balls)
+    else: # Debug all
+        print(f"[DEBUG] Running debug pipeline for ALL images")
+        for i in range(len(images)):  
+            table_image, img_name = read_image(images, i)
+            circles = detect_balls(table_image, img_name, output_dir=DEBUG_OUTPUT_DIR+"/top_view", debugOutput=False) # FIXME: The output_dir is for warp_table (not ball detection)
+            balls = detect_ball_numbers(table_image, circles, img_name)
+            warp_table(table_image, img_name, output_dir=DEBUG_OUTPUT_DIR+"/top_view")
+else:
+    run_full_detection(INPUT_DIR, OUTPUT_DIR)
