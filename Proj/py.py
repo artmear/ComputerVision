@@ -11,8 +11,8 @@ INPUT_DIR = "example_json/input.json" # TODO: Change this to the desired input j
 OUTPUT_DIR = "output" # TODO: Change this to the desired output directory
 
 # Debug
-DEBUG = 1
-DEBUG_OPTION = 42
+DEBUG = 0
+DEBUG_OPTION = None
 DEBUG_OUTPUT_DIR = "debug" 
 
 
@@ -88,14 +88,14 @@ if DEBUG:
         print(f"[DEBUG] Running debug pipeline for option: {DEBUG_OPTION}")
         table_image, img_name = read_image(images, DEBUG_OPTION)
         circles = detect_balls(table_image, img_name, output_dir=DEBUG_OUTPUT_DIR+"/top_view", debugOutput=False) # FIXME: The output_dir is for warp_table (not ball detection)
-        balls = detect_ball_numbers(table_image, circles, img_name) # Detect ball numbers
+        balls = detect_ball_numbers(table_image, circles, img_name, debug=True) # Detect ball numbers
         show_detected_balls_on_image(table_image, balls)
     else: # Debug all
         print(f"[DEBUG] Running debug pipeline for ALL images")
         for i in range(len(images)):  
             table_image, img_name = read_image(images, i)
             circles = detect_balls(table_image, img_name, output_dir=DEBUG_OUTPUT_DIR+"/top_view", debugOutput=False) # FIXME: The output_dir is for warp_table (not ball detection)
-            balls = detect_ball_numbers(table_image, circles, img_name)
+            balls = detect_ball_numbers(table_image, circles, img_name, debug=True)
             warp_table(table_image, img_name, output_dir=DEBUG_OUTPUT_DIR+"/top_view")
 else:
     run_full_detection(INPUT_DIR, OUTPUT_DIR)
