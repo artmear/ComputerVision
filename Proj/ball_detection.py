@@ -74,12 +74,12 @@ def detect_balls(image, image_name, output_dir, debugOutput):
 
     # Detect circles using Hough Transform
     ballRadius = (width*POOL_TABLE_BALL_RATIO)/2.0
-    offset = 12
+    offset = 21
 
     # Slightly less than a full diameter (2 * radius)
-    minDist = ballRadius * 1.8
-    param1 = 40
-    param2 = 13
+    minDist = ballRadius * 1.825
+    param1 = 35
+    param2 = 16
     minRadius = int(ballRadius)
     maxRadius = int(ballRadius + offset)
 
@@ -94,6 +94,7 @@ def detect_balls(image, image_name, output_dir, debugOutput):
     if circles is not None:
         circles = np.uint16(np.around(circles))
         hsv_image = cv2.cvtColor(image.copy(), cv2.COLOR_BGR2HSV)
+        #near_black_value_threshold = 58
         near_black_value_threshold = 62
         for circle_idx, i in enumerate(circles[0, :], start=1):
             x, y, r = i[0], i[1], i[2]
@@ -115,7 +116,7 @@ def detect_balls(image, image_name, output_dir, debugOutput):
                 cv2.imwrite(hue_debug_path, cv2.cvtColor(hsv_image_cropped, cv2.COLOR_HSV2BGR))
                 print(f"[DEBUG] hue_image_cropped saved in: {hue_debug_path} and dominant hue is {dominant_hue}, mean V is {mean_value:.1f}, near_black={is_near_black}")
 
-            if (dominant_hue > 90 and dominant_hue < 103) and (not is_near_black):
+            if (dominant_hue > 85 and dominant_hue < 106) and (not is_near_black):
                 print(f"Color is {dominant_hue}")
                 continue
 
