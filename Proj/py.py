@@ -7,11 +7,11 @@ from warp_table import warp_table
 from number_detection import detect_ball_numbers, show_detected_balls_on_image
 
 # Input and output
-INPUT_DIR = "example_json/input.json" # TODO: Change this to the desired input json file
+INPUT_DIR = "roboflow_dataset/input.json" # TODO: Change this to the desired input json file
 OUTPUT_DIR = "output" # TODO: Change this to the desired output directory
 
 # Debug
-DEBUG = 0
+DEBUG = 1
 DEBUG_OPTION = None
 DEBUG_OUTPUT_DIR = "debug" 
 
@@ -95,7 +95,7 @@ if DEBUG:
         for i in range(len(images)):  
             table_image, img_name = read_image(images, i)
             circles = detect_balls(table_image, img_name, output_dir=DEBUG_OUTPUT_DIR+"/top_view", debugOutput=False) # FIXME: The output_dir is for warp_table (not ball detection)
-            balls = detect_ball_numbers(table_image, circles, img_name, debug=True)
+            balls = detect_ball_numbers(table_image, circles, img_name, debug=False)
             warp_table(table_image, img_name, output_dir=DEBUG_OUTPUT_DIR+"/top_view")
 else:
     run_full_detection(INPUT_DIR, OUTPUT_DIR)
