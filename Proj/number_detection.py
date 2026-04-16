@@ -38,13 +38,44 @@ class Ball:
 
 
 
-"""Calculate dominant color by averaging in RGB space (avoids hue wrapping issues)."""
+"""Calculate dominant color using median in BGR space (avoids hue wrapping issues)"""
 def get_dominant_color(hsv_img, mask):
     bgr_img = cv2.cvtColor(hsv_img, cv2.COLOR_HSV2BGR)
-    mean_bgr = cv2.mean(bgr_img, mask=mask)[:3]
-    mean_bgr = np.uint8([[mean_bgr]])
-    mean_hsv = cv2.cvtColor(mean_bgr, cv2.COLOR_BGR2HSV)
-    return mean_hsv
+    # Extract masked pixels and calculate median for each channel
+    masked_pixels = bgr_img[mask > 0]
+    if len(masked_pixels) == 0:
+        return None
+    median_bgr = np.median(masked_pixels, axis=0)[:3]
+    median_bgr = np.uint8([[median_bgr]])
+    median_hsv = cv2.cvtColor(median_bgr, cv2.COLOR_BGR2HSV)
+    return median_hsv
+
+
+"""Calculate dominant color using only non-white pixels (for balls misclassified as white)."""
+def get_dominant_color_non_white(hsv_img, mask):
+    # Mask out white/near-white pixels (low saturation, high value)
+    non_white = (hsv_img[:, :, 1] > 50) | (hsv_img[:, :, 2] < 150)
+    combined_mask = cv2.bitwise_and(mask, mask, mask=non_white.astype(np.uint8) * 255)
+    
+    # Fall back to original mask if too few non-white pixels
+    if np.sum(combined_mask > 0) < 20:
+        return get_dominant_color(hsv_img, mask)
+    
+    return get_dominant_color(hsv_img, combined_mask)
+
+
+"""Compute a white score for a ball ROI (higher = whiter). Used to find the cue ball."""
+def compute_white_score(ball_roi):
+    hsv_img = cv2.cvtColor(ball_roi, cv2.COLOR_BGR2HSV)
+    mask = get_circular_mask(hsv_img, 0.30)
+    masked_s = hsv_img[:, :, 1][mask > 0]
+    masked_v = hsv_img[:, :, 2][mask > 0]
+    if len(masked_s) == 0:
+        return -1
+    avg_s = np.mean(masked_s)
+    avg_v = np.mean(masked_v)
+    # White = high brightness with low saturation
+    return avg_v - avg_s
 
 
 
@@ -193,21 +224,25 @@ def color_to_ball_number(dominant_color, is_striped):
 
 
 """ Detect single ball color and type, and map to ball number """
-def detect_ball_color(ball_roi):
+def detect_ball_color(ball_roi, use_non_white=False):
     hsv_img = cv2.cvtColor(ball_roi, cv2.COLOR_BGR2HSV)
 
     # Stripe detection uses the unfiltered mask
     is_striped = is_striped_ball(hsv_img)
 
     # Detect dominant color and number
-    circular_mask = get_circular_mask(hsv_img, 0.45)
-    dominant_color = get_dominant_color(hsv_img, circular_mask)
+    circular_mask = get_circular_mask(hsv_img, 0.30)
+    if use_non_white:
+        dominant_color = get_dominant_color_non_white(hsv_img, circular_mask)
+    else:
+        dominant_color = get_dominant_color(hsv_img, circular_mask)
     number = color_to_ball_number(dominant_color, is_striped)
 
     # TODO: DEBUG (Remove later)
     #h, s, v = dominant_color[0][0]
     #print(f"Ball detected - H:{h}, S:{s}, V:{v} | Striped:{is_striped} | Number:{number}") 
-    #debug_dominant_color(ball_roi, hsv_img, circular_mask, dominant_color) 
+    #if dominant_color is not None:
+        #debug_dominant_color(ball_roi, hsv_img, circular_mask, dominant_color) 
 
     return is_striped, number, dominant_color
 
@@ -235,9 +270,9 @@ def detect_ball_numbers(image, circles, img_name, debug=False):
     image = calibrate_white_balance(image, circles)
     
     h, w = image.shape[:2]
-    balls = []
-  
-    # For each detected circle, crop the ROI, detect color and type, and store results in a Ball object
+    
+    # First pass: detect all balls and compute white scores
+    ball_data = []  # (ball_roi, bbox, circle, xmin, xmax, ymin, ymax, white_score)
     for (x, y, r) in circles:
         ball_roi, bbox = crop_ball_roi(image, x, y, r)
         xmin = bbox[0]/w
@@ -246,8 +281,34 @@ def detect_ball_numbers(image, circles, img_name, debug=False):
         ymax = bbox[3]/h
         if ball_roi.size == 0:
             continue
-        ball_type, number, dominant_color = detect_ball_color(ball_roi)
-        balls.append(Ball((int(x), int(y), int(r)), bbox, ball_type, number, dominant_color, xmin, xmax, ymin, ymax))
+        white_score = compute_white_score(ball_roi)
+        ball_data.append((ball_roi, bbox, (int(x), int(y), int(r)), xmin, xmax, ymin, ymax, white_score))
+    
+    # Find the whitest ball (cue ball candidate)
+    cue_ball_idx = -1
+    if ball_data:
+        cue_ball_idx = max(range(len(ball_data)), key=lambda i: ball_data[i][7])
+    
+    # Second pass: classify each ball
+    balls = []
+    for i, (ball_roi, bbox, circle, xmin, xmax, ymin, ymax, white_score) in enumerate(ball_data):
+        if i == cue_ball_idx:
+            # This is the whitest ball -> cue ball (number 0)
+            ball_type = False  # not striped
+            number = 0
+            hsv_img = cv2.cvtColor(ball_roi, cv2.COLOR_BGR2HSV)
+            circular_mask = get_circular_mask(hsv_img, 0.30)
+            dominant_color = get_dominant_color(hsv_img, circular_mask)
+            #if dominant_color is not None: # TODO: Remove (DEBUG)
+                #debug_dominant_color(ball_roi, hsv_img, circular_mask, dominant_color)
+        else:
+            # For non-cue balls, detect normally first
+            ball_type, number, dominant_color = detect_ball_color(ball_roi)
+            # If this ball was also classified as white, reclassify using non-white pixels
+            if number == 0:
+                ball_type, number, dominant_color = detect_ball_color(ball_roi, use_non_white=True)
+        
+        balls.append(Ball(circle, bbox, ball_type, number, dominant_color, xmin, xmax, ymin, ymax))
 
     # Save output for debugging
     if debug:
