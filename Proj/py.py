@@ -7,11 +7,11 @@ from warp_table import warp_table
 from number_detection import detect_ball_numbers, show_detected_balls_on_image
 
 # Input and output
-INPUT_DIR = "example_json/input.json" # TODO: Change this to the desired input json file
+INPUT_DIR = "roboflow_dataset/input.json" # TODO: Change this to the desired input json file
 OUTPUT_DIR = "output" # TODO: Change this to the desired output directory
 
 # Debug
-DEBUG = 0
+DEBUG = 1
 DEBUG_OPTION = None
 DEBUG_OUTPUT_DIR = "debug" 
 
