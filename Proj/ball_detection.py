@@ -48,6 +48,26 @@ def crop_ball_roi(image, x, y, r, pad=4):
     roi = image[y1:y2, x1:x2]
     return roi, (x1, y1, x2, y2)
 
+""" Calculate Intersection over Union (IoU) between two bounding boxes."""
+def is_top_view(quad, tolerance=0.15):
+    src = order_points_clockwise(quad)
+    (tl, tr, br, bl) = src
+
+    # Compute the lengths of all four sides
+    top_len = float(np.linalg.norm(tr - tl))
+    bottom_len = float(np.linalg.norm(br - bl))
+    left_len = float(np.linalg.norm(bl - tl))
+    right_len = float(np.linalg.norm(br - tr))
+
+    # Compute ratio of opposite sides (1.0 = perfectly rectangular). In a top view, approximately, top = bottom and left = right
+    h_ratio = min(top_len, bottom_len) / max(top_len, bottom_len, 1e-6)
+    v_ratio = min(left_len, right_len) / max(left_len, right_len, 1e-6)
+
+    is_top = h_ratio > (1.0 - tolerance) and v_ratio > (1.0 - tolerance)
+
+    return is_top
+
+
 def detect_balls(image, image_name, output_dir, debugOutput):
 
     # Milimiters
@@ -67,6 +87,25 @@ def detect_balls(image, image_name, output_dir, debugOutput):
     table_mask, quad = warp_table(image, image_name, output_dir)
     ima = cv2.bitwise_and(image, image, mask=table_mask)
 
+    # Check if this is a top-down view to select appropriate parameters
+    top_view = is_top_view(quad)
+
+    # Compute the 6 pocket locations to filter out balls inside holes for top view
+    src = order_points_clockwise(quad)
+    (tl, tr, br, bl) = src
+    top_len = np.linalg.norm(tr - tl) # Calculate the length of the top edge of the table (distance between top-left and top-right corners)
+    bottom_len = np.linalg.norm(br - bl)
+    left_len = np.linalg.norm(bl - tl)
+    right_len = np.linalg.norm(br - tr)
+    
+    pockets = [tl, tr, br, bl]
+    if (top_len + bottom_len) > (left_len + right_len): # Check if the table is in landscape orientation (width > height)
+        pockets.append((tl + tr) / 2.0)
+        pockets.append((bl + br) / 2.0)
+    else:
+        pockets.append((tl + bl) / 2.0)
+        pockets.append((tr + br) / 2.0)
+
     # Before applying the HoughCircles we need to convert the image to grayscale
     # otherwise it will fail. We can also blur the image to remove some of the noise that may interfere.
     gray = cv2.cvtColor(ima, cv2.COLOR_BGR2GRAY)
@@ -78,12 +117,16 @@ def detect_balls(image, image_name, output_dir, debugOutput):
 
     # Slightly less than a full diameter (2 * radius)
     minDist = ballRadius * 1.825
-    param1 = 35
-    param2 = 16
     minRadius = int(ballRadius)
     maxRadius = int(ballRadius + offset)
 
-    print(f"[INFO] minDist={minDist}, param1={param1}, param2={param2}, minRadius={minRadius}, maxRadius={maxRadius}")
+    if top_view:
+        # we need more sensitive detection parameters in the top view
+        param1 = 25
+        param2 = 12
+    else:
+        param1 = 35
+        param2 = 16
 
     circles = cv2.HoughCircles(blurred, cv2.HOUGH_GRADIENT, dp=1,  minDist=minDist, param1=param1, param2=param2, minRadius=minRadius, maxRadius=maxRadius)
 
@@ -98,6 +141,17 @@ def detect_balls(image, image_name, output_dir, debugOutput):
         near_black_value_threshold = 62
         for circle_idx, i in enumerate(circles[0, :], start=1):
             x, y, r = i[0], i[1], i[2]
+
+            # Reject balls that are inside or too close to holes (pockets) when in top-view
+            if top_view:
+                in_hole = False
+                for pocket in pockets:
+                    dist = np.linalg.norm(np.array([x, y]) - pocket)
+                    if dist < r * 2.5:
+                        in_hole = True
+                        break
+                if in_hole:
+                    continue
 
             # Crop the image to just the detected circle.
             (hsv_image_cropped, _) = crop_ball_roi(hsv_image, x, y, 10, pad=0)

@@ -265,7 +265,7 @@ def crop_ball_roi(image, x, y, r, pad=4):
 
 
 """ Main function to detect all balls numbers and types. Return their types and numbers """
-def detect_ball_numbers(image, circles, img_name, debug=False):
+def detect_ball_numbers(image, circles, img_name, debug=False, debug_output=False):
     # Apply white balance calibration using detected cue ball
     image = calibrate_white_balance(image, circles)
     
@@ -311,7 +311,7 @@ def detect_ball_numbers(image, circles, img_name, debug=False):
         balls.append(Ball(circle, bbox, ball_type, number, dominant_color, xmin, xmax, ymin, ymax))
 
     # Save output for debugging
-    if debug:
+    if debug_output:
         output_img = image.copy()
         for ball in balls:
             (x1, y1, x2, y2) = ball.bbox
