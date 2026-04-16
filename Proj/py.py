@@ -95,7 +95,7 @@ if DEBUG:
         for i in range(len(images)):  
             table_image, img_name = read_image(images, i)
             circles = detect_balls(table_image, img_name, output_dir=DEBUG_OUTPUT_DIR+"/top_view", debugOutput=False) # FIXME: The output_dir is for warp_table (not ball detection)
-            balls = detect_ball_numbers(table_image, circles, img_name, debug=False)
+            balls = detect_ball_numbers(table_image, circles, img_name, debug=False, debug_output=True) 
             warp_table(table_image, img_name, output_dir=DEBUG_OUTPUT_DIR+"/top_view")
 else:
     run_full_detection(INPUT_DIR, OUTPUT_DIR)
