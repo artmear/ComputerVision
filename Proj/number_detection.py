@@ -3,14 +3,14 @@ import cv2
 from debug import debug_dominant_color, show_detected_balls_on_image, save_debug_image
 
 # Color hue ranges
-LOWER_RED_HUE = 165 
-UPPER_RED_HUE = 10
-UPPER_BROWN_HUE = 25
-UPPER_ORANGE_HUE = 35
+LOWER_RED_HUE = 170
+UPPER_RED_HUE = 8
+UPPER_BROWN_HUE = 20
+UPPER_ORANGE_HUE = 29
 UPPER_YELLOW_HUE = 55
 UPPER_GREEN_HUE = 85
-UPPER_BLUE_HUE = 130
-UPPER_PURPLE_HUE = 155
+UPPER_BLUE_HUE = 115
+UPPER_PURPLE_HUE = 179
 
 
 # Ball class to store all relevant information about each detected ball
@@ -224,7 +224,7 @@ def color_to_ball_number(dominant_color, is_striped):
 
 
 """ Detect single ball color and type, and map to ball number """
-def detect_ball_color(ball_roi, use_non_white=False):
+def detect_ball_color(ball_roi, use_non_white=False, debug=False):
     hsv_img = cv2.cvtColor(ball_roi, cv2.COLOR_BGR2HSV)
 
     # Stripe detection uses the unfiltered mask
@@ -241,8 +241,8 @@ def detect_ball_color(ball_roi, use_non_white=False):
     # TODO: DEBUG (Remove later)
     #h, s, v = dominant_color[0][0]
     #print(f"Ball detected - H:{h}, S:{s}, V:{v} | Striped:{is_striped} | Number:{number}") 
-    #if dominant_color is not None:
-        #debug_dominant_color(ball_roi, hsv_img, circular_mask, dominant_color) 
+    if dominant_color is not None and debug: # TODO: Remove (DEBUG)
+        debug_dominant_color(ball_roi, hsv_img, circular_mask, dominant_color) 
 
     return is_striped, number, dominant_color
 
@@ -299,15 +299,15 @@ def detect_ball_numbers(image, circles, img_name, debug=False):
             hsv_img = cv2.cvtColor(ball_roi, cv2.COLOR_BGR2HSV)
             circular_mask = get_circular_mask(hsv_img, 0.30)
             dominant_color = get_dominant_color(hsv_img, circular_mask)
-            #if dominant_color is not None: # TODO: Remove (DEBUG)
-                #debug_dominant_color(ball_roi, hsv_img, circular_mask, dominant_color)
+            if dominant_color is not None and debug: # TODO: Remove (DEBUG)
+                debug_dominant_color(ball_roi, hsv_img, circular_mask, dominant_color)
         else:
             # For non-cue balls, detect normally first
-            ball_type, number, dominant_color = detect_ball_color(ball_roi)
+            ball_type, number, dominant_color = detect_ball_color(ball_roi, debug=debug)
             # If this ball was also classified as white, reclassify using non-white pixels
             if number == 0:
-                ball_type, number, dominant_color = detect_ball_color(ball_roi, use_non_white=True)
-        
+                ball_type, number, dominant_color = detect_ball_color(ball_roi, use_non_white=True, debug=debug)
+
         balls.append(Ball(circle, bbox, ball_type, number, dominant_color, xmin, xmax, ymin, ymax))
 
     # Save output for debugging
