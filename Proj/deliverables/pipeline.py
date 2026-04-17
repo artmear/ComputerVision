@@ -26,6 +26,7 @@ UPPER_BLUE = np.array([144, 255, 255], dtype=np.uint8)
 MIN_CONTOUR_AREA = 5000
 HULL_SIMPLIFY_EPS = 2.0
 
+''' Orders the given points in a consistent clockwise order. '''
 def order_points_clockwise(pts):
     pts = np.asarray(pts, dtype=np.float32)
 
@@ -42,6 +43,7 @@ def order_points_clockwise(pts):
 
     return pts.astype(np.float32)
 
+''' Function that fits lines to the given hull and finds their intersections to get the corners of the table. '''
 def fit_lines_and_intersect(hull, image_shape):
     h, w = image_shape[:2]
 
@@ -148,6 +150,7 @@ def fit_lines_and_intersect(hull, image_shape):
     corners[:, 1] = np.clip(corners[:, 1], 0, h - 1)
     return corners.reshape(-1, 1, 2).astype(np.int32)
 
+''' Function that approximates a quadrilateral from the given hull using contour approximation. '''
 def approx_quad_from_hull(hull):
     perimeter = cv2.arcLength(hull, True)
 
@@ -168,6 +171,7 @@ def approx_quad_from_hull(hull):
 
     return None
 
+''' Function that computes the internal angles of a quadrilateral '''
 def quad_internal_angles_deg(quad):
     pts = order_points_clockwise(quad).astype(np.float32)
     if len(pts) != 4:
@@ -192,12 +196,14 @@ def quad_internal_angles_deg(quad):
 
     return np.array(angles, dtype=np.float32)
 
+''' Function that checks if the quadrilateral has internal angles close to 90 degrees, which is a strong indication of being a pool table. '''
 def quad_is_near_right_angles(quad, tolerance_deg=25.0):
     angles = quad_internal_angles_deg(quad)
     if angles is None:
         return False
     return bool(np.all(np.abs(angles - 90.0) <= tolerance_deg))
 
+''' Function that selects the best quadrilateral from the hull based on line fitting and angle checks'''
 def select_table_quad(hull, image_shape, right_angle_tolerance_deg=25.0):
     quad = fit_lines_and_intersect(hull, image_shape)
 
@@ -211,6 +217,7 @@ def select_table_quad(hull, image_shape, right_angle_tolerance_deg=25.0):
     rect = cv2.minAreaRect(hull)
     return cv2.boxPoints(rect).astype(np.int32).reshape(-1, 1, 2)
 
+''' Function that computes the homography to warp the table to a top-down view, applies padding based on the shape of the table, and saves the warped image. '''
 def compute_topview_homography(quad):
     src = order_points_clockwise(quad)   # tl, tr, br, bl
     tl, tr, br, bl = src
@@ -254,6 +261,7 @@ def compute_topview_homography(quad):
     H, _ = cv2.findHomography(src_reordered, dst, method=0)
     return H, (width, height)
 
+''' Computes padding per side based on the shaped of the quadrilateral '''
 def compute_per_side_padding(quad, dst_size, padding_min=0.06, padding_max=0.1):
     src = order_points_clockwise(quad)
     tl, tr, br, bl = src
@@ -278,7 +286,7 @@ def compute_per_side_padding(quad, dst_size, padding_min=0.06, padding_max=0.1):
 
     return pad_top, pad_right, pad_bottom, pad_left
 
-
+''' Adjusts the homography to avoid cropping when warping the image '''
 def adjust_homography_no_crop(H, src_image_shape):
     h, w = src_image_shape[:2]
     max_canvas_w = w * 4
@@ -318,6 +326,8 @@ def adjust_homography_no_crop(H, src_image_shape):
 
     return H_adjusted, (canvas_w, canvas_h)
 
+
+''' Conversion to BGR if the image is grayscale, otherwise returns the original image. '''
 def _to_bgr(img):
     if img is None:
         return None
@@ -325,6 +335,7 @@ def _to_bgr(img):
         return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
     return img
 
+''' Creates a debug tile with the given image and label, resizing the image to fit within the tile dimensions. '''
 def _make_debug_tile(img, label, tile_w=560, tile_h=360, title_h=42):
     bgr = _to_bgr(img)
 
@@ -365,6 +376,7 @@ def _make_debug_tile(img, label, tile_w=560, tile_h=360, title_h=42):
 
     return canvas
 
+''' Composes a grid of debug tiles into a single image '''
 def _compose_debug_grid(tiles, columns=2):
     if not tiles:
         return np.zeros((360, 560, 3), dtype=np.uint8)
@@ -385,6 +397,8 @@ def _compose_debug_grid(tiles, columns=2):
 
     return cv2.vconcat(row_imgs)
 
+
+''' Saves a debug panel with multiple stages of the pipeline for visualization and debugging purposes. '''
 def save_debug_pipeline(
     image, image_name, output_dir,
     blue_mask, blue_only, hull, quad, table_mask,
@@ -411,6 +425,8 @@ def save_debug_pipeline(
     cv2.imwrite(debug_path, debug_panel)
     print(f"[DEBUG] pipeline saved in: {debug_path}")
 
+
+''' Main function that detects the pool table in the image, warps it to a top-down view, and saves debug images for each stage of the pipeline. '''
 def warp_table(image, image_name, output_dir, debug=False):
     if output_dir is not None:
         os.makedirs(output_dir, exist_ok=True)
