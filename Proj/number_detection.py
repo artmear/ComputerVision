@@ -79,26 +79,22 @@ def compute_white_score(ball_roi):
 
 
 
-""" This function checks for the presence of a white stripe across the ball"""
-def is_striped_ball(hsv_img):
-    # Stripes = significant white band across the middle of the ball.
-    h, w = hsv_img.shape[:2]
+""" This function checks for the presence of a white stripe. Striped balls have a significant portion of white over their entire visible surface. """
+def is_striped_ball(hsv_img):    
+    # Get a circular mask covering most of the ball
+    mask = get_circular_mask(hsv_img, radius_fraction=0.40)
     
-    # Check the middle horizontal band of the ball for white pixels
-    # Stripes typically run horizontally across the middle
-    band_start = int(h * 0.35)
-    band_end = int(h * 0.65)
-    middle_band = hsv_img[band_start:band_end, :]
+    area = np.sum(mask > 0)
+    if area == 0:
+        return False
+        
+    # Look for white pixels within the circular mask (low saturation, high brightness)
+    white_px = (hsv_img[:, :, 1] < 50) & (hsv_img[:, :, 2] > 100) & (mask > 0)
+    white_ratio = np.sum(white_px) / area
     
-    # Look for white pixels in the band (very low saturation)
-    white_px = (middle_band[:, :, 1] < 40) & (middle_band[:, :, 2] > 100)
-    white_ratio = np.sum(white_px) / (middle_band.shape[0] * middle_band.shape[1])
-    
-    is_striped = white_ratio > 0.05  # If >5% of middle band is white-ish
-    
-    # DEBUG # TODO: Remove
-    #print(f"  Stripe check - white_ratio in middle band: {white_ratio:.3f}, is_striped: {is_striped}") 
-    
+    # Since we are evaluating the whole ball, a striped ball should have more than a given threshold of white pixels.
+    is_striped = white_ratio > 0.15 
+        
     return is_striped
 
 

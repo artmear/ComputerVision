@@ -11,7 +11,7 @@ INPUT_DIR = "roboflow_dataset/input.json" # TODO: Change this to the desired inp
 OUTPUT_DIR = "output" # TODO: Change this to the desired output directory
 
 # Debug
-DEBUG = 1
+DEBUG = 0
 DEBUG_OPTION = None
 DEBUG_OUTPUT_DIR = "debug" 
 
