@@ -9,3 +9,10 @@ Proj/debug
 Proj/output
 Proj/__pycache__
 Proj/output_debug
+8-BallPool.v2i.yolov8
+task3OLD
+task3/model.pt
+task3/yolov8n.pt
+task3/yolo26n.pt
+task3/detection_results.json
+task3/runs
