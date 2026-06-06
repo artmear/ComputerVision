@@ -3,4 +3,6 @@ opencv-python
 matplotlib
 scipy
 ipywidgets
-ultralytics
+torch
+torchmetrics
+pandas
