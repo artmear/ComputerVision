@@ -16,3 +16,4 @@ task3/yolov8n.pt
 task3/yolo26n.pt
 task3/detection_results.json
 task3/runs
+task3/predictions
