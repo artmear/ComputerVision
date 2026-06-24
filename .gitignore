@@ -9,3 +9,8 @@ Proj/debug
 Proj/output
 Proj/__pycache__
 Proj/output_debug
+
+# Large regenerable artifacts (purged from history; trained *.pt are kept via LFS)
+Proj/custom_yolo_ball_count.zip
+Proj/custom_yolo_ball_count/datasets_and_train_script/collab_ready.zip
+Proj/custom_yolo_ball_count/yolov8s.pt
