@@ -130,69 +130,69 @@ def main():
         json.dump(val_annotations, f)
 
     # Device
-    if torch.cuda.is_available():
-        device = 'cuda'
-    elif torch.backends.mps.is_available():
-        device = 'mps'
-    else:
-        device = 'cpu'
-    print('using device:', device)
-
-    epochs = 10
-
-    model = BallDetector().to(device)
-    optimizer = torch.optim.Adam(
-        (param for param in model.parameters() if param.requires_grad),
-        lr=1e-4,
-    )
-    metric = torchmetrics.detection.MeanAveragePrecision(box_format='xyxy', iou_type='bbox')
-
-    batch_size = 4
-    num_workers = 4
-
-    train_dataset = PoolBallsDataset('.', train_annotations, train_transform)
-    train_dataloader = torch.utils.data.DataLoader(
-        train_dataset, batch_size, shuffle=True, collate_fn=collate_fn, num_workers=num_workers,
-    )
-
-    val_dataset = PoolBallsDataset('.', val_annotations, val_transform)
-    val_dataloader = torch.utils.data.DataLoader(
-        val_dataset, batch_size, collate_fn=collate_fn, num_workers=num_workers,
-    )
-
-    train_history = {'loss': []}
-    val_history = {'metric': []}
-    for epoch in range(epochs):
-        avg_loss, _ = one_epoch(model, optimizer, train_dataloader, True)
-        train_history['loss'].append(avg_loss)
-        print(f'Epoch {epoch+1:2d}/{epochs} - Train loss: {avg_loss}')
-
-        _, avg_metric = one_epoch(model, optimizer, val_dataloader, False)
-        val_history['metric'].append(avg_metric)
-        print(f'Epoch {epoch+1:2d}/{epochs} - Val   mAP50: {avg_metric}')
-
-    torch.save(model.state_dict(), 'ball_detector.pt')
-
-    # Visualize predictions on validation set
-    model.eval()
-    batch = next(iter(val_dataloader))
-    images = [b[0].to(device) for b in batch]
-    targets = [b[1] for b in batch]
-    with torch.no_grad():
-        preds = model(images)
-    for i in range(min(4, len(images))):
-        plt.subplot(2, 2, i+1)
-        plt.imshow(images[i].permute(1, 2, 0).cpu())
-        keep = preds[i]['scores'] >= 0.5
-        boxes = preds[i]['boxes'][keep].cpu()
-        for x1, y1, x2, y2 in boxes:
-            plt.gca().add_patch(Rectangle((x1, y1), x2-x1, y2-y1, fill=False, edgecolor='r', linestyle='--'))
-        for x1, y1, x2, y2 in targets[i]['boxes'].cpu():
-            plt.gca().add_patch(Rectangle((x1, y1), x2-x1, y2-y1, fill=False, edgecolor='b'))
-        plt.title(f'Total balls: {len(boxes)}')
-    plt.tight_layout()
-    os.makedirs('output', exist_ok=True)
-    plt.savefig('output/validation_predictions.png')
+    #if torch.cuda.is_available():
+    #    device = 'cuda'
+    #elif torch.backends.mps.is_available():
+    #    device = 'mps'
+    #else:
+    #    device = 'cpu'
+    #print('using device:', device)
+#
+    #epochs = 10
+#
+    #model = BallDetector().to(device)
+    #optimizer = torch.optim.Adam(
+    #    (param for param in model.parameters() if param.requires_grad),
+    #    lr=1e-4,
+    #)
+    #metric = torchmetrics.detection.MeanAveragePrecision(box_format='xyxy', iou_type='bbox')
+#
+    #batch_size = 4
+    #num_workers = 4
+#
+    #train_dataset = PoolBallsDataset('.', train_annotations, train_transform)
+    #train_dataloader = torch.utils.data.DataLoader(
+    #    train_dataset, batch_size, shuffle=True, collate_fn=collate_fn, num_workers=num_workers,
+    #)
+#
+    #val_dataset = PoolBallsDataset('.', val_annotations, val_transform)
+    #val_dataloader = torch.utils.data.DataLoader(
+    #    val_dataset, batch_size, collate_fn=collate_fn, num_workers=num_workers,
+    #)
+#
+    #train_history = {'loss': []}
+    #val_history = {'metric': []}
+    #for epoch in range(epochs):
+    #    avg_loss, _ = one_epoch(model, optimizer, train_dataloader, True)
+    #    train_history['loss'].append(avg_loss)
+    #    print(f'Epoch {epoch+1:2d}/{epochs} - Train loss: {avg_loss}')
+#
+    #    _, avg_metric = one_epoch(model, optimizer, val_dataloader, False)
+    #    val_history['metric'].append(avg_metric)
+    #    print(f'Epoch {epoch+1:2d}/{epochs} - Val   mAP50: {avg_metric}')
+#
+    #torch.save(model.state_dict(), 'ball_detector.pt')
+#
+    ## Visualize predictions on validation set
+    #model.eval()
+    #batch = next(iter(val_dataloader))
+    #images = [b[0].to(device) for b in batch]
+    #targets = [b[1] for b in batch]
+    #with torch.no_grad():
+    #    preds = model(images)
+    #for i in range(min(4, len(images))):
+    #    plt.subplot(2, 2, i+1)
+    #    plt.imshow(images[i].permute(1, 2, 0).cpu())
+    #    keep = preds[i]['scores'] >= 0.5
+    #    boxes = preds[i]['boxes'][keep].cpu()
+    #    for x1, y1, x2, y2 in boxes:
+    #        plt.gca().add_patch(Rectangle((x1, y1), x2-x1, y2-y1, fill=False, edgecolor='r', linestyle='--'))
+    #    for x1, y1, x2, y2 in targets[i]['boxes'].cpu():
+    #        plt.gca().add_patch(Rectangle((x1, y1), x2-x1, y2-y1, fill=False, edgecolor='b'))
+    #    plt.title(f'Total balls: {len(boxes)}')
+    #plt.tight_layout()
+    #os.makedirs('output', exist_ok=True)
+    #plt.savefig('output/validation_predictions.png')
 
 
 if __name__ == '__main__':
