@@ -15,11 +15,12 @@ class BallDetector(torch.nn.Module):
     # Background + ball
     NUM_CLASSES = 2
 
-    def __init__(self):
+    def __init__(self, use_local=True):
         super().__init__()
-        # Faster R-CNN with a COCO-pretrained ResNet50-FPN backbone.
-        weights = FasterRCNN_ResNet50_FPN_Weights.DEFAULT
-        self.model = fasterrcnn_resnet50_fpn(weights=weights)
+        if use_local:
+            self.model = fasterrcnn_resnet50_fpn(weights=None, weights_backbone=None)
+        else:
+            self.model = fasterrcnn_resnet50_fpn(weights=FasterRCNN_ResNet50_FPN_Weights.DEFAULT)
 
         # Replace the classification/box head for our single "ball" class.
         in_features = self.model.roi_heads.box_predictor.cls_score.in_features
@@ -33,7 +34,7 @@ class BallDetector(torch.nn.Module):
 # Configuration
 INPUT_JSON = "input.json"
 OUTPUT = "ball_counts.json"
-WEIGHTS = "ball_detector.pt"
+WEIGHTS = "ball_detector_faster_rcnn_resnet50.pt"
 THRESHOLD = 0.5
 
 # Same preprocessing as the validation pipeline in train.py: Faster R-CNN
@@ -45,7 +46,7 @@ inference_transform = transforms.Compose([
 
 
 def load_model(weights_path, device):
-    model = BallDetector().to(device)
+    model = BallDetector(use_local=True).to(device)
     state_dict = torch.load(weights_path, map_location=device)
     model.load_state_dict(state_dict)
     model.eval()

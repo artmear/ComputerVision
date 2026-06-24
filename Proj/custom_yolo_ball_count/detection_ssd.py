@@ -14,11 +14,12 @@ class BallDetector(torch.nn.Module):
     # Background + ball
     NUM_CLASSES = 2
 
-    def __init__(self):
+    def __init__(self, use_local=True):
         super().__init__()
-        # SSD300 with a COCO-pretrained VGG16 backbone.
-        weights = SSD300_VGG16_Weights.DEFAULT
-        self.model = ssd300_vgg16(weights=weights)
+        if use_local:
+            self.model = ssd300_vgg16(weights=None, weights_backbone=None)
+        else:
+            self.model = ssd300_vgg16(weights=SSD300_VGG16_Weights.DEFAULT)
 
         # SSD has no roi_heads; instead swap the multi-scale classification head
         # for our single "ball" class, keeping the same anchors and channels.
@@ -48,7 +49,7 @@ inference_transform = transforms.Compose([
 
 
 def load_model(weights_path, device):
-    model = BallDetector().to(device)
+    model = BallDetector(use_local=True).to(device)
     state_dict = torch.load(weights_path, map_location=device)
     model.load_state_dict(state_dict)
     model.eval()

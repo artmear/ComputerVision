@@ -193,7 +193,8 @@ def main():
     with open(os.path.join(val_dir, "_annotations.json")) as f:
         annotations = json.load(f)
 
-    model = load_model("ball_detector.pt", device)
+    #model = load_model("ball_detector_faster_rcnn_resnet50.pt", device)
+    model = load_model("ball_detector_ssd.pt", device)
     predictions, ground_truths = run_inference(
         model, annotations, os.path.join(val_dir, "images"), device, inference_transform
     )
