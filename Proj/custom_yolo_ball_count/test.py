@@ -179,7 +179,8 @@ def evaluate(predictions, ground_truths):
 
 
 def main():
-    from detection_faster_rcnn_resnet50 import load_model, inference_transform
+    #from detection_faster_rcnn_resnet50 import load_model, inference_transform
+    from detection_ssd import load_model, inference_transform
 
     if torch.cuda.is_available():
         device = "cuda"
