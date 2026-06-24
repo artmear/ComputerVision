@@ -1,6 +1,3 @@
-[
-    {
-        "image_path": "datasets_and_train_script/datasets/validation/images/1_png.rf.8199e7f82efa196a0732a582c5d2472e.jpg",
-        "num_balls": 2
-    }
-]
+version https://git-lfs.github.com/spec/v1
+oid sha256:d7d8af413b5ec204528e9054b44be3451cca7582ab2423d24882409bf20c59b1
+size 162

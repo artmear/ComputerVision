@@ -1,27 +1,3 @@
-
-Pool Balls Detection - v13 v13
-==============================
-
-This dataset was exported via roboflow.com on May 14, 2024 at 9:13 AM GMT
-
-Roboflow is an end-to-end computer vision platform that helps you
-* collaborate with your team on computer vision projects
-* collect & organize images
-* understand and search unstructured image data
-* annotate, and create datasets
-* export, train, and deploy computer vision models
-* use active learning to improve your dataset over time
-
-For state of the art Computer Vision training notebooks you can use with this dataset,
-visit https://github.com/roboflow/notebooks
-
-To find over 100k other datasets and pre-trained models, visit https://universe.roboflow.com
-
-The dataset includes 131 images.
-Pool-balls are annotated in COCO format.
-
-The following pre-processing was applied to each image:
-
-No image augmentation techniques were applied.
-
-
+version https://git-lfs.github.com/spec/v1
+oid sha256:0f85316af507c6f9626eafb76834e45d9170c2f1e2593e3fdb356a3c041ad1db
+size 885

@@ -1,6 +1,3 @@
-# Pool Ball Detection > 2025-09-16 4:10pm
-https://universe.roboflow.com/pool-ball-detection/pool-ball-detection-6lfd9
-
-Provided by a Roboflow user
-License: CC BY 4.0
-
+version https://git-lfs.github.com/spec/v1
+oid sha256:1235e75cf4e3112819b7cd4cd3c2296d71d98e89f21847954d6dfce5424e3d22
+size 167
