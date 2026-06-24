@@ -121,6 +121,14 @@ def main():
     train_annotations = annotations_json_array[:n_train]
     val_annotations = annotations_json_array[n_train:]
 
+    # Save validation set (images + annotations) to a separate folder for testing
+    val_dir = 'datasets/validation'
+    os.makedirs(os.path.join(val_dir, 'images'), exist_ok=True)
+    for annotation in val_annotations:
+        shutil.copy(annotation['image_path'], os.path.join(val_dir, 'images', os.path.basename(annotation['image_path'])))
+    with open(os.path.join(val_dir, '_annotations.json'), 'w') as f:
+        json.dump(val_annotations, f)
+
     # Device
     if torch.cuda.is_available():
         device = 'cuda'
