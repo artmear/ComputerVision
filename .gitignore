@@ -19,3 +19,5 @@ task3/runs
 task3/predictions
 task3/rtdetr-l.pt
 task3/yolov8s.pt
+Temp
+report
